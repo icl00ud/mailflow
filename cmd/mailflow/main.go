@@ -20,6 +20,7 @@ import (
 	"github.com/icl00ud/mailflow/internal/mail"
 	"github.com/icl00ud/mailflow/internal/server"
 	"github.com/icl00ud/mailflow/internal/store"
+	"github.com/icl00ud/mailflow/internal/track17"
 )
 
 func env(k, def string) string {
@@ -86,6 +87,14 @@ func main() {
 
 	eng := engine.New(st, flows, sender, log)
 	srv := &server.Server{Eng: eng, Log: log, AdminPassword: pass, ShopifySecret: server.SecretFromEnv, SenderName: sender.Name()}
+
+	if k := os.Getenv("TRACK17_KEY"); k != "" {
+		eng.Tracker = &track17.Client{Key: k}
+		srv.Track17Key = k
+		log.Info("tracking provider", "kind", "17TRACK")
+	} else {
+		log.Warn("TRACK17_KEY unset: no automatic carrier events (steps 6/7 only via the panel)")
+	}
 
 	go eng.Run(ctx, 15*time.Second)
 

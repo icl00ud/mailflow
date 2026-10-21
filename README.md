@@ -9,8 +9,8 @@ Shopify webhooks -> scheduled jobs in Postgres -> SMTP, with a panel that shows 
 |---|---|---|---|
 | 1 Order confirmed | `orders/paid` | none | ignores the send window |
 | 2 Being prepared | after the sale | 24 h exact | all orders |
-| 2.5 Packed, waiting for carrier | after step 2 | 48 business h | all orders |
-| 3 Shipped + tracking | after step 2.5 | 30 business h | **held until a real tracking number exists** |
+| 2.5 Packed, waiting for carrier | after step 2 | 24 business h | all orders |
+| 3 Shipped + tracking | after step 2.5 | 24 business h | **held until a real tracking number exists** |
 | 4 No movement yet, normal | after step 3 | 90 business h | only if carrier silent, within 8 days of dispatch |
 | 5 Waiting for the flight | after step 4 | 24 business h | skipped if already arrived |
 | 6 Arrived in your country | carrier event `arrived_country` | none | |
@@ -36,7 +36,7 @@ go run ./cmd/mailflow -check                      # validate flows + templates
 ADMIN_PASSWORD=dev go run ./cmd/mailflow          # in-memory store, dry-run sender, http://127.0.0.1:8080 (admin/dev)
 ```
 
-Env: `DATABASE_URL` (unset = memory), `SMTP_HOST/PORT/USER/PASS` (unset = dry-run log sender), `ADMIN_PASSWORD`,
+Env: `TRACK17_KEY` (17TRACK; unset = no automatic carrier events), `DATABASE_URL` (unset = memory), `SMTP_HOST/PORT/USER/PASS` (unset = dry-run log sender), `ADMIN_PASSWORD`,
 `SHOPIFY_WEBHOOK_SECRET_<STORE_ID>` (`ARMAN_CURREN`), `STORES_DIR`, `LISTEN_ADDR`.
 
 ## Shopify setup
@@ -44,7 +44,10 @@ Env: `DATABASE_URL` (unset = memory), `SMTP_HOST/PORT/USER/PASS` (unset = dry-ru
 Set `store.shopify_domain` in flow.yaml, create a custom app, and subscribe webhooks to
 `https://<host>/webhooks/shopify` for `orders/paid`, `orders/cancelled`, `fulfillments/create`, `fulfillments/update`.
 Shopify maps `shipment_status` to in_transit / out_for_delivery / ready_for_pickup / delivered. It has **no** "arrived in
-destination country" milestone: step 6 needs a tracking provider (17TRACK adapter, not built) or the panel's "Marcar" button.
+destination country" milestone, so when a tracking number is attached mailflow registers it with 17TRACK
+(`tag = mf:<order id>`) and 17TRACK pushes milestones to `/webhooks/17track` (signed: `sha256(body + "/" + key)`).
+Set that URL in the 17TRACK dashboard (Settings). The free plan is a **one-time 200 tracking numbers** for accounts created
+after 2026-01-07, not monthly; after that it is paid. The panel's "Marcar" button remains the manual fallback.
 
 ## Adding a store
 

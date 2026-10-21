@@ -20,6 +20,7 @@ import (
 	"github.com/icl00ud/mailflow/internal/flow"
 	"github.com/icl00ud/mailflow/internal/shopify"
 	"github.com/icl00ud/mailflow/internal/store"
+	"github.com/icl00ud/mailflow/internal/track17"
 )
 
 //go:embed web/index.html
@@ -32,6 +33,8 @@ type Server struct {
 	// ShopifySecret returns the webhook secret of a store ("" when not configured).
 	ShopifySecret func(storeID string) string
 	SenderName    string
+	// Track17Key authenticates 17TRACK pushes (empty disables /webhooks/17track).
+	Track17Key string
 }
 
 func (s *Server) Handler() http.Handler {
@@ -44,6 +47,7 @@ func (s *Server) Handler() http.Handler {
 		io.WriteString(w, "ok")
 	})
 	mux.HandleFunc("POST /webhooks/shopify", s.shopifyWebhook)
+	mux.HandleFunc("POST /webhooks/17track", s.track17Webhook)
 
 	admin := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.auth(h)) }
 	admin("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +177,43 @@ func (s *Server) shopifyWebhook(w http.ResponseWriter, r *http.Request) {
 		s.Log.Error("webhook", "topic", topic, "err", herr)
 		http.Error(w, "processing error", http.StatusInternalServerError) // Shopify retries
 		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) track17Webhook(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 5<<20))
+	if err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+	if !track17.Verify(body, r.Header.Get("sign"), s.Track17Key) {
+		http.Error(w, "bad signature", http.StatusUnauthorized)
+		return
+	}
+	p, err := track17.Parse(body)
+	if err != nil {
+		http.Error(w, "bad payload", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	orderID, ok := track17.OrderFromTag(p.Tag)
+	if !ok { // not ours (or tag lost): acknowledge so 17TRACK stops retrying
+		s.Log.Warn("17track push without a mailflow tag", "number", p.Number)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if _, err := s.Eng.Store.OrderByID(ctx, orderID); err != nil {
+		s.Log.Warn("17track push for unknown order", "order", orderID)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	for _, ev := range p.Events {
+		if err := s.Eng.TrackingEvent(ctx, orderID, ev.Name, ev.Label, "17track", ev.At); err != nil {
+			s.Log.Error("17track event", "order", orderID, "event", ev.Name, "err", err)
+			http.Error(w, "processing error", http.StatusInternalServerError) // 17TRACK retries
+			return
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 }

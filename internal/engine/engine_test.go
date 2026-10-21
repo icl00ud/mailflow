@@ -112,13 +112,16 @@ func TestFullJourney(t *testing.T) {
 	if n := len(v.c.msgs); n != 2 {
 		t.Fatalf("msgs=%d want 2", n)
 	}
-	// 2.5 = Thu 11:00 + 48 business h = Mon 11:00 (weekend skipped)
-	if j := v.job(o.ID, "2.5"); !j.DueAt.Equal(time.Date(2026, 10, 26, 11, 0, 0, 0, v.f.Loc())) {
-		t.Fatalf("step 2.5 due %v, want Mon 11:00", j.DueAt)
+	// 2.5 = Thu 11:00 + 24 business h = Fri 11:00
+	if j := v.job(o.ID, "2.5"); !j.DueAt.Equal(time.Date(2026, 10, 23, 11, 0, 0, 0, v.f.Loc())) {
+		t.Fatalf("step 2.5 due %v, want Fri 11:00", j.DueAt)
 	}
 
-	v.at("2026-10-26 11:00") // 2.5 sent; step 3 due Tue 17:00
-	v.at("2026-10-27 17:00") // step 3 due but no tracking -> held, not sent
+	v.at("2026-10-23 11:00") // 2.5 sent; step 3 = Fri 11:00 + 24 business h = Mon 11:00 (weekend skipped)
+	if j := v.job(o.ID, "3"); !j.DueAt.Equal(time.Date(2026, 10, 26, 11, 0, 0, 0, v.f.Loc())) {
+		t.Fatalf("step 3 due %v, want Mon 11:00", j.DueAt)
+	}
+	v.at("2026-10-26 11:00") // step 3 due but no tracking -> held, not sent
 	if n := len(v.c.msgs); n != 3 {
 		t.Fatalf("step 3 must not send without tracking; msgs=%d", n)
 	}
@@ -129,7 +132,7 @@ func TestFullJourney(t *testing.T) {
 	if err := v.e.Dispatched(ctx, o.ID, "LP123", "YunExpress", "", v.now); err != nil {
 		t.Fatal(err)
 	}
-	v.at("2026-10-27 17:01")
+	v.at("2026-10-26 11:01")
 	last := v.c.msgs[len(v.c.msgs)-1]
 	if !strings.Contains(last.Subject, "has shipped") || !strings.Contains(last.HTML, "LP123") {
 		t.Fatalf("step 3 not sent with tracking: %q", last.Subject)
@@ -181,11 +184,14 @@ func TestStep4SendsWhenTrackingStaysSilent(t *testing.T) {
 	o := v.order()
 	v.at("2026-10-21 11:00")
 	v.at("2026-10-22 11:00")
-	v.at("2026-10-26 11:00")
+	v.at("2026-10-23 11:00")
 	_ = v.e.Dispatched(context.Background(), o.ID, "LP1", "", "", v.now)
-	v.at("2026-10-27 17:00") // step 3
-	// 90 business hours after Tue 17:00 = Tue->Fri... (7h Tue +24 Wed +24 Thu +24 Fri =79h) + Mon 11h = Mon 11:00
-	v.at("2026-11-02 11:00")
+	v.at("2026-10-26 11:00") // step 3 sent
+	// 90 business h after Mon 11:00 = Fri 05:00 -> inside no window -> Fri 08:00
+	if j := v.job(o.ID, "4"); !j.DueAt.Equal(time.Date(2026, 10, 30, 8, 0, 0, 0, v.f.Loc())) {
+		t.Fatalf("step 4 due %v, want Fri 08:00", j.DueAt)
+	}
+	v.at("2026-10-30 08:00")
 	if last := v.c.msgs[len(v.c.msgs)-1]; !strings.Contains(last.Subject, "hasn't moved yet") {
 		t.Fatalf("step 4 not sent: %v", v.c.subjects())
 	}

@@ -20,13 +20,19 @@ const (
 	holdRecheck     = 5 * time.Minute
 )
 
+// Tracker subscribes a parcel to carrier tracking updates (17TRACK).
+type Tracker interface {
+	Register(ctx context.Context, number, tag string) error
+}
+
 type Engine struct {
-	Store  store.Store
-	Flows  map[string]*flow.Flow
-	Sender mailpkg.Sender
-	Render *mailpkg.Renderer
-	Log    *slog.Logger
-	Now    func() time.Time
+	Tracker Tracker // optional
+	Store   store.Store
+	Flows   map[string]*flow.Flow
+	Sender  mailpkg.Sender
+	Render  *mailpkg.Renderer
+	Log     *slog.Logger
+	Now     func() time.Time
 }
 
 func New(s store.Store, flows map[string]*flow.Flow, sender mailpkg.Sender, log *slog.Logger) *Engine {
@@ -99,6 +105,14 @@ func (e *Engine) Dispatched(ctx context.Context, orderID int64, number, carrier,
 		return err
 	}
 	if changed {
+		if e.Tracker != nil {
+			// A failure must not block the shipped email; steps 6/7 then need the panel's "Marcar".
+			rc, cancel := context.WithTimeout(ctx, 15*time.Second)
+			if err := e.Tracker.Register(rc, number, fmt.Sprintf("mf:%d", orderID)); err != nil {
+				e.Log.Error("tracking provider registration failed", "order", orderID, "number", number, "err", err)
+			}
+			cancel()
+		}
 		return e.Store.WakeHeld(ctx, orderID, e.Now())
 	}
 	return nil

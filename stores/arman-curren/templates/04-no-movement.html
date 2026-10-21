@@ -1,0 +1,8 @@
+{{define "preheader"}}No scans yet is expected at this stage — here's why.{{end}}
+{{define "body"}}
+<h1 style="margin:0 0 14px;font-family:Georgia,'Playfair Display',serif;font-size:26px;line-height:1.25;font-weight:600;color:#0a0a0a;">No movement yet — and that's normal</h1>
+<p style="margin:0 0 18px;">Hi {{.FirstName}}, your tracking for order <b>{{.Order.Name}}</b> ({{.Tracking}}) hasn't updated yet. We wanted you to hear that from us rather than wonder.</p>
+<p style="margin:0 0 18px;">Parcels leaving our supplier are consolidated and scanned in batches, so the first tracking update can lag behind the actual journey by several days. It does not mean anything is wrong.</p>
+{{if .TrackURL}}<p style="margin:0 0 18px;"><a href="{{.TrackURL}}" style="color:#047857;font-weight:bold;">Check your tracking</a></p>{{end}}
+<p style="margin:0 0 18px;">If there is still no update by 8 days after dispatch, reply to this email and we'll chase it for you.</p>
+{{end}}

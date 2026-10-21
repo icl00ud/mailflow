@@ -1,0 +1,7 @@
+{{define "preheader"}}Your parcel is travelling — tracking updates once it lands in your country.{{end}}
+{{define "body"}}
+<h1 style="margin:0 0 14px;font-family:Georgia,'Playfair Display',serif;font-size:26px;line-height:1.25;font-weight:600;color:#0a0a0a;">On its way to your country</h1>
+<p style="margin:0 0 18px;">Hi {{.FirstName}}, a quick note on order <b>{{.Order.Name}}</b>.</p>
+<p style="margin:0 0 18px;">International parcels usually travel by air before they reach the local carrier, and tracking typically doesn't update during that leg. It will refresh once the parcel arrives in your country — we'll email you the moment it does.</p>
+{{if .TrackURL}}<p style="margin:0 0 18px;"><a href="{{.TrackURL}}" style="color:#047857;font-weight:bold;">Track {{.Tracking}}</a></p>{{end}}
+{{end}}

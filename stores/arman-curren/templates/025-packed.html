@@ -1,0 +1,6 @@
+{{define "preheader"}}Packed, checked, and waiting for the carrier to collect it.{{end}}
+{{define "body"}}
+<h1 style="margin:0 0 14px;font-family:Georgia,'Playfair Display',serif;font-size:26px;line-height:1.25;font-weight:600;color:#0a0a0a;">Packed and waiting for pickup</h1>
+<p style="margin:0 0 18px;">Hi {{.FirstName}}, order <b>{{.Order.Name}}</b> has been picked and checked, and is now waiting for the carrier to collect it.</p>
+<p style="margin:0 0 18px;">This is the last step before it leaves us. Your tracking number follows in your next email — it only exists once the carrier has the parcel, so we won't send you a code that doesn't work yet.</p>
+{{end}}

@@ -1,0 +1,105 @@
+# Arman Curren — post-purchase journey. Mirrors the George Tomi / Stephan Focus board.
+# "business" delays count only Mon-Fri hours (America/New_York); "exact" are plain clock hours.
+store:
+  id: arman-curren
+  name: Arman Curren
+  from: "Arman Curren <hello@armancurren.com>"
+  reply_to: hello@armancurren.com
+  site: https://armancurren.com
+  timezone: America/New_York
+  shopify_domain: ""            # set to <shop>.myshopify.com once the store exists
+  send_window: {start: 8, end: 21}   # emails due outside 08:00-21:00 ET wait for the next 08:00
+  holidays:                          # US days the supplier/carrier does not move parcels
+    - "2026-11-26"
+    - "2026-12-25"
+    - "2027-01-01"
+
+steps:
+  - id: "1"
+    title: Order confirmed
+    subject: "Your Arman Curren order {{.Order.Name}} is confirmed"
+    template: 01-confirmed
+    status: on
+    trigger: {on: order_paid}
+    delay: {hours: 0}
+    immediate: true
+    note: "Sent the moment Shopify reports the order paid. Shows the items ordered."
+
+  - id: "2"
+    title: Order is being prepared
+    subject: "We're preparing order {{.Order.Name}}"
+    template: 02-preparing
+    status: on
+    trigger: {on: order_paid}
+    delay: {hours: 24, business: false}
+    note: "24 exact hours after the sale, for ALL orders."
+
+  - id: "2.5"
+    title: Picked and checked, waiting for the carrier
+    subject: "Order {{.Order.Name}} is packed and waiting for pickup"
+    template: 025-packed
+    status: on
+    trigger: {on: after_step, step: "2"}
+    delay: {hours: 48, business: true}
+    note: "48 business hours after step 2, for ALL orders. Says it is waiting for the carrier, never that it has travelled."
+
+  - id: "3"
+    title: Shipped + tracking number
+    subject: "Order {{.Order.Name}} has shipped — your tracking number"
+    template: 03-shipped
+    status: on
+    trigger: {on: after_step, step: "2.5"}
+    delay: {hours: 30, business: true}
+    conditions: [has_tracking]
+    note: "30 business hours after step 2.5. HELD until a real tracking number is attached (Shopify fulfillment or panel) — never sends a code that does not exist. If 2.5 was skipped the chain counts from its due time."
+
+  - id: "4"
+    title: No movement yet, and that is normal
+    subject: "Order {{.Order.Name}}: tracking hasn't moved yet — that's normal"
+    template: 04-no-movement
+    status: on
+    trigger: {on: after_step, step: "3"}
+    delay: {hours: 90, business: true}
+    conditions: [no_carrier_movement, not_arrived, within_window]
+    window_days: 8
+    note: "90 business hours after dispatch, ONLY if the tracking is still silent; window up to 8 days after dispatch."
+
+  - id: "5"
+    title: Waiting for the flight to your country
+    subject: "Order {{.Order.Name}} is on its way to your country"
+    template: 05-awaiting-flight
+    status: on
+    trigger: {on: after_step, step: "4"}
+    delay: {hours: 24, business: true}
+    conditions: [not_arrived]
+    note: "24 business hours after step 4. Explains tracking only updates once the parcel lands in the destination country. Skipped if it already arrived."
+
+  - id: "6"
+    title: Arrived in your country
+    subject: "Good news: order {{.Order.Name}} has arrived in your country"
+    template: 06-arrived
+    status: on
+    trigger: {on: tracking, event: arrived_country}
+    delay: {hours: 0}
+    conditions: [not_delivered]
+    note: "On the carrier's arrival event. The best news of the journey."
+
+  - id: "7"
+    title: Out for delivery today
+    subject: "Order {{.Order.Name}} is out for delivery today"
+    template: 07-out-for-delivery
+    status: on
+    trigger: {on: tracking, event: out_for_delivery}
+    delay: {hours: 0}
+    immediate: true
+    conditions: [not_delivered]
+    note: "On the carrier's out-for-delivery event. Keeps the customer home so the delivery doesn't fail."
+
+  - id: "8"
+    title: Waiting for pickup
+    subject: ""
+    template: ""
+    status: draft
+    trigger: {on: tracking, event: ready_for_pickup}
+    delay: {hours: 0}
+    note: "CRITICAL: parcel held 10-13 days at the pickup point, then goes back on its own. Copy still to be written."

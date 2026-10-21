@@ -1,0 +1,7 @@
+{{define "preheader"}}Arriving today — please be reachable.{{end}}
+{{define "body"}}
+<h1 style="margin:0 0 14px;font-family:Georgia,'Playfair Display',serif;font-size:26px;line-height:1.25;font-weight:600;color:#0a0a0a;">Out for delivery today</h1>
+<p style="margin:0 0 18px;">Hi {{.FirstName}}, order <b>{{.Order.Name}}</b> is with the delivery driver and should reach you today.</p>
+<p style="margin:0 0 18px;">If you can, keep an eye on your door or have someone at the address — a missed delivery is the most common reason a parcel gets held at a depot.</p>
+{{if .TrackURL}}<p style="margin:0 0 18px;"><a href="{{.TrackURL}}" style="color:#047857;font-weight:bold;">Follow the delivery</a></p>{{end}}
+{{end}}

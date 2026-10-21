@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mailflow</title>
+<style>
+  :root{--bg:#0d1016;--card:#161a22;--line:#262c38;--txt:#e7eaf0;--mut:#8a93a5;--dim:#5d6678;
+        --green:#22a05a;--blue:#3b7bf0;--orange:#e0763a;--red:#e05a5a;--gray:#59616f}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.45 Inter,system-ui,sans-serif;
+       background-image:radial-gradient(#1b212c 1px,transparent 1px);background-size:22px 22px}
+  header{display:flex;align-items:center;gap:14px;padding:14px 26px;border-bottom:1px solid var(--line);background:#0d1016ee;position:sticky;top:0;z-index:5}
+  header b{font-size:15px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--line);color:var(--mut)}
+  .pill.warn{color:#ffd29a;border-color:#6a4a1c;background:#2a1f10}
+  main{padding:8px 26px 80px}
+  .lane{margin:26px 0 8px}
+  .lane h2{margin:0 0 12px;font-size:15px}
+  .lane h2 small{font-weight:400;color:var(--mut);margin-left:8px}
+  .row{display:flex;align-items:stretch;overflow-x:auto;padding-bottom:12px}
+  .arrow{flex:0 0 22px;align-self:center;height:1px;background:var(--line);position:relative}
+  .arrow:after{content:"";position:absolute;right:0;top:-3px;border:4px solid transparent;border-left:6px solid var(--line)}
+  .step{flex:0 0 230px;background:var(--card);border:1px solid var(--line);border-left:3px solid var(--green);border-radius:7px;padding:10px 12px;display:flex;flex-direction:column;gap:5px}
+  .step.off{border-left-color:var(--gray);opacity:.75}
+  .step.draft{border-left-color:var(--orange)}
+  .step .t{display:flex;gap:8px;align-items:flex-start;font-weight:600;font-size:13px}
+  .num{flex:none;min-width:19px;height:19px;border-radius:10px;background:#20345c;color:#9db9f5;font-size:10px;display:grid;place-items:center;padding:0 5px}
+  .step.off .num{background:#2a2f39;color:var(--mut)}
+  .step.draft .num{background:#47281a;color:#f0a47a}
+  .timing{color:var(--mut);font-size:11px}
+  .note{color:var(--dim);font-size:11px;flex:1}
+  .badge{align-self:flex-start;font-size:10px;padding:1px 8px;border-radius:9px;background:#10301f;color:#4fd08a;border:1px solid #1c5a38}
+  .badge.off{background:#242830;color:var(--mut);border-color:var(--line)}
+  .badge.draft{background:#3a1f12;color:#f0956a;border-color:#6a3318}
+  .stats{display:flex;gap:8px;font-size:10px;color:var(--mut);flex-wrap:wrap}
+  .stats b{color:var(--txt)}.stats .f{color:var(--red)}.stats .f b{color:var(--red)}
+  .acts{display:flex;gap:5px;margin-top:2px;flex-wrap:wrap}
+  button,select,input{font:inherit;color:var(--txt);background:#1d222c;border:1px solid var(--line);border-radius:5px;padding:3px 9px}
+  button{cursor:pointer}button:hover{border-color:#3b4558}button:disabled{opacity:.4;cursor:default}
+  h3{margin:30px 0 10px;font-size:14px}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  th,td{padding:8px 11px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mut);font-weight:500;font-size:11px}
+  tr:last-child td{border-bottom:0}
+  .chip{display:inline-block;margin:1px 2px 1px 0;padding:0 6px;border-radius:9px;font-size:10px;border:1px solid var(--line);color:var(--mut)}
+  .chip.sent{background:#10301f;color:#4fd08a;border-color:#1c5a38}
+  .chip.pending{color:#9db9f5;border-color:#27407a}
+  .chip.held{color:#f0c36a;border-color:#6a5420}
+  .chip.skipped,.chip.canceled{text-decoration:line-through}
+  .chip.failed{background:#3a1616;color:#f08a8a;border-color:#6a2a2a;cursor:pointer}
+  .mut{color:var(--mut)}
+  .form{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0 14px}
+  dialog{background:#fff;border:0;border-radius:8px;padding:0;width:min(680px,92vw);height:80vh}
+  dialog::backdrop{background:#000a}
+  dialog .bar{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;background:#161a22;color:var(--txt)}
+  dialog iframe{width:100%;height:calc(100% - 38px);border:0;background:#f2f2f0}
+  #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#222a38;border:1px solid var(--line);padding:8px 16px;border-radius:7px;display:none;z-index:9}
+</style>
+</head>
+<body>
+<header><b>mailflow</b><span class="pill" id="sender"></span><span class="pill" id="clock"></span></header>
+<main id="main"></main>
+<dialog id="dlg"><div class="bar"><span id="dlgTitle"></span><button id="dlgClose">fechar</button></div><iframe id="frame" sandbox></iframe></dialog>
+<div id="toast"></div>
+<script>
+const $ = s => document.querySelector(s);
+// DOM builder: order/customer data comes from Shopify, so it is only ever inserted as text.
+function h(tag, attrs, ...kids){
+  const e = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs||{})) {
+    if (k==='class') e.className=v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else if (v!==false && v!=null) e.setAttribute(k,v);
+  }
+  for (const k of kids.flat()) if (k!=null && k!==false) e.append(k.nodeType?k:document.createTextNode(k));
+  return e;
+}
+function toast(msg){const t=$('#toast');t.textContent=msg;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',3200)}
+async function api(path, method='GET', body){
+  const opt = {method};
+  if (method==='POST'){ opt.headers={'Content-Type':'application/json'}; opt.body=JSON.stringify(body||{}); }
+  const r = await fetch(path,opt);
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error||r.statusText);
+  return j;
+}
+const act = (fn, ok) => async()=>{ try{ const r=await fn(); if(ok) toast(typeof ok==='function'?ok(r):ok); await load(); }catch(e){ toast('Erro: '+e.message) } };
+const badgeText = {on:'ligado',off:'pausado',draft:'falta escrever'};
+const fmt = t => t ? new Date(t).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}) : '';
+
+function stepCard(f, s){
+  const c = s.counts||{};
+  return h('div',{class:'step '+(s.effective==='on'?'':s.effective)},
+    h('div',{class:'t'},h('span',{class:'num'},s.id),s.title),
+    h('div',{class:'timing'},s.timing),
+    h('div',{class:'note'},s.note),
+    h('span',{class:'badge '+(s.effective==='on'?'':s.effective)},badgeText[s.effective]),
+    h('div',{class:'stats'},
+      h('span',{},h('b',{},c.sent||0),' enviados'),
+      h('span',{},h('b',{},c.pending||0),' na fila'),
+      c.skipped?h('span',{},h('b',{},c.skipped),' pulados'):null,
+      c.failed?h('span',{class:'f'},h('b',{},c.failed),' falhas'):null),
+    h('div',{class:'acts'},
+      h('button',{disabled:s.effective==='draft',onclick:()=>preview(f.store.id,s)},'Ver'),
+      h('button',{disabled:s.effective==='draft',onclick:()=>{const to=prompt('Enviar teste para qual email?');if(to)act(()=>api(`/api/flows/${f.store.id}/steps/${s.id}/test`,'POST',{to}),r=>'Enviado via '+r.via)()}},'Teste'),
+      h('button',{disabled:s.effective==='draft',onclick:act(()=>api(`/api/flows/${f.store.id}/steps/${s.id}/status`,'POST',{status:s.effective==='on'?'off':'on'}))},s.effective==='on'?'Pausar':'Ligar')));
+}
+function preview(store, s){
+  $('#dlgTitle').textContent = `Passo ${s.id} — ${s.title}`;
+  fetch(`/api/flows/${store}/steps/${s.id}/preview`).then(async r=>{
+    const t = await r.text(); if(!r.ok) throw new Error(JSON.parse(t).error);
+    $('#frame').srcdoc = t; $('#dlg').showModal();
+  }).catch(e=>toast('Erro: '+e.message));
+}
+$('#dlgClose').onclick=()=>$('#dlg').close();
+
+function orderRow(o){
+  const evSel = h('select',{},...['in_transit','arrived_country','out_for_delivery','ready_for_pickup','delivered'].map(e=>h('option',{value:e},e)));
+  return h('tr',{},
+    h('td',{},h('b',{},o.name||o.external_id),h('div',{class:'mut'},fmt(o.paid_at)),o.canceled?h('div',{class:'chip failed'},'cancelado'):null),
+    h('td',{},o.customer_name,h('div',{class:'mut'},o.email),h('div',{class:'mut'},(o.items||[]).map(i=>`${i.qty}× ${i.title}`).join(', '),' · ',o.total)),
+    h('td',{},o.tracking_number?h('span',{},o.tracking_number,h('div',{class:'mut'},o.carrier)):h('span',{class:'mut'},'sem rastreio')),
+    h('td',{},(o.jobs||[]).map(j=>h('span',{class:'chip '+j.status+(j.held?' held':''),
+        title:`${j.status}${j.held?' (esperando rastreio real)':''} · prevista ${fmt(j.due_at)}${j.reason?' · '+j.reason:''}`,
+        onclick:j.status==='failed'||j.status==='skipped'?()=>confirm('Reenfileirar o passo '+j.step_id+'?')&&act(()=>api(`/api/jobs/${j.id}/retry`,'POST'),'Reenfileirado')():null},j.step_id)),
+      h('div',{class:'mut'},(o.events||[]).map(e=>e.event).join(' → '))),
+    h('td',{},h('div',{class:'acts'},
+      h('button',{onclick:()=>{const n=prompt('Código de rastreio real:');if(n)act(()=>api(`/api/orders/${o.id}/tracking`,'POST',{number:n,carrier:prompt('Transportadora (opcional):')||''}),'Rastreio salvo')()}},'Rastreio'),
+      evSel,h('button',{onclick:act(()=>api(`/api/orders/${o.id}/events`,'POST',{event:evSel.value}),'Evento registrado')},'Marcar'),
+      h('button',{disabled:o.canceled,onclick:()=>confirm('Cancelar todos os emails pendentes?')&&act(()=>api(`/api/orders/${o.id}/cancel`,'POST'),'Cancelado')()},'Cancelar'))));
+}
+async function load(){
+  const [flows, orders] = await Promise.all([api('/api/flows'), api('/api/orders')]);
+  $('#sender').textContent = flows[0] ? 'envio: '+flows[0].sender : '';
+  $('#sender').className = 'pill'+(flows[0]&&flows[0].sender.startsWith('log')?' warn':'');
+  $('#clock').textContent = 'atualizado '+new Date().toLocaleTimeString('pt-BR');
+  const main = $('#main'); main.replaceChildren();
+  for (const f of flows){
+    const row = h('div',{class:'row'});
+    f.steps.forEach((s,i)=>{ if(i) row.append(h('div',{class:'arrow'})); row.append(stepCard(f,s)); });
+    main.append(h('div',{class:'lane'},h('h2',{},f.store.name,h('small',{},f.store.from)),row));
+    const mine = orders.filter(o=>o.store_id===f.store.id);
+    const name=h('input',{placeholder:'nome do cliente'}), email=h('input',{placeholder:'email do cliente',size:26});
+    main.append(h('h3',{},'Pedidos — '+f.store.name),
+      h('div',{class:'form'},name,email,h('button',{onclick:act(()=>api('/api/orders','POST',{store:f.store.id,customer:name.value,email:email.value}),'Pedido de teste criado')},'Novo pedido de teste')),
+      mine.length?h('table',{},h('thead',{},h('tr',{},['Pedido','Cliente','Rastreio','Jornada (passos)','Ações'].map(t=>h('th',{},t)))),h('tbody',{},mine.map(orderRow))):h('div',{class:'mut'},'Nenhum pedido ainda.'));
+  }
+}
+load().catch(e=>toast('Erro: '+e.message));
+setInterval(()=>{ if(!document.querySelector('dialog[open]')&&!document.activeElement.matches('input,select')) load().catch(()=>{}) },20000);
+</script>
+</body>
+</html>

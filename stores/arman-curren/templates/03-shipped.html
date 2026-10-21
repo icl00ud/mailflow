@@ -1,0 +1,12 @@
+{{define "preheader"}}Your tracking number: {{.Tracking}}{{end}}
+{{define "body"}}
+<h1 style="margin:0 0 14px;font-family:Georgia,'Playfair Display',serif;font-size:26px;line-height:1.25;font-weight:600;color:#0a0a0a;">Your order has shipped</h1>
+<p style="margin:0 0 18px;">Hi {{.FirstName}}, order <b>{{.Order.Name}}</b> is on its way.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f2f0;margin:0 0 22px;"><tr><td style="padding:18px 20px;">
+  <div style="font-size:11px;letter-spacing:2px;color:#6b6b6b;">TRACKING NUMBER</div>
+  <div style="font-family:'Courier New',monospace;font-size:20px;font-weight:bold;color:#0a0a0a;margin:4px 0;">{{.Tracking}}</div>
+  {{if .Carrier}}<div style="font-size:13px;color:#6b6b6b;">Carrier: {{.Carrier}}</div>{{end}}
+</td></tr></table>
+{{if .TrackURL}}<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 22px;"><tr><td style="background:#059669;border-radius:3px;"><a href="{{.TrackURL}}" style="display:inline-block;padding:13px 26px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#ffffff;text-decoration:none;">Track your order</a></td></tr></table>{{end}}
+<p style="margin:0 0 18px;"><b>Good to know:</b> international tracking often shows nothing for the first few days after dispatch. The first scan appears once the carrier processes the parcel. That's normal, and we'll keep you posted as it moves.</p>
+{{end}}

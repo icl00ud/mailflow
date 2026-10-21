@@ -1,0 +1,6 @@
+{{define "preheader"}}Your order {{.Order.Name}} is now being prepared.{{end}}
+{{define "body"}}
+<h1 style="margin:0 0 14px;font-family:Georgia,'Playfair Display',serif;font-size:26px;line-height:1.25;font-weight:600;color:#0a0a0a;">We're preparing your order</h1>
+<p style="margin:0 0 18px;">Hi {{.FirstName}}, order <b>{{.Order.Name}}</b> is now being prepared. Your {{range $i, $it := .Items}}{{if $i}}, {{end}}{{$it.Title}}{{end}} is being picked and set aside for packing.</p>
+<p style="margin:0 0 18px;">There is nothing you need to do. Next you'll hear from us once it's packed and waiting for the carrier, and then with your tracking number.</p>
+{{end}}

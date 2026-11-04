@@ -5,7 +5,7 @@ store:
   name: Arman Curren
   from: "Arman Curren <hello@armancurren.com>"
   reply_to: hello@armancurren.com
-  site: https://armancurren.com
+  site: https://arnancurren.com   # boutique, where the ads land; logo + footer link here
   timezone: America/New_York
   shopify_domain: t8msz8-hk.myshopify.com   # X-Shopify-Shop-Domain of the webhooks
   storefront_token: cf8d382e5675b3754e69f92d7c44f582   # PUBLIC Storefront token (already in the site's JS); product photos in emails

@@ -343,20 +343,26 @@ func trackURL(o *store.Order) string {
 	return ""
 }
 
-func sampleItem(f *flow.Flow) store.Item {
-	if f.Store.SampleItem.Title != "" {
-		return store.Item{Title: f.Store.SampleItem.Title, Variant: f.Store.SampleItem.Variant, Image: f.Store.SampleItem.Image, Qty: 1}
+func sampleItems(f *flow.Flow) []store.Item {
+	var out []store.Item
+	for _, id := range f.Store.SampleVariants {
+		if c, ok := f.Catalog[id]; ok {
+			out = append(out, store.Item{Title: c.Title, Variant: c.Variant, Image: c.Image, Qty: 1})
+		}
 	}
-	return store.Item{Title: "Sample watch", Qty: 1}
+	if len(out) == 0 {
+		out = []store.Item{{Title: "Sample watch", Qty: 1}}
+	}
+	return out
 }
 
 // SampleOrder is used by previews and test sends.
 func SampleOrder(f *flow.Flow, now time.Time) *store.Order {
 	return &store.Order{
 		ID: 0, StoreID: f.Store.ID, ExternalID: "preview", Name: "#1042", Email: "preview@example.com",
-		CustomerName: "Alex Morgan", Currency: "USD", Total: "$194.98", Country: "US", PaidAt: now.Add(-24 * time.Hour),
-		// Optional per-store sample line item (flow.yaml store.sample_item) so previews show a real product photo.
-		Items:    []store.Item{sampleItem(f)},
+		CustomerName: "Alex Morgan", Currency: "USD", Total: "$238.90", Country: "US", PaidAt: now.Add(-24 * time.Hour),
+		// Per-store sample lines (flow.yaml store.sample_variants, looked up in catalog.json) so previews show real products.
+		Items:    sampleItems(f),
 		Tracking: "LP00123456789012", Carrier: "YunExpress", TrackingURL: "https://parcelsapp.com/en/tracking/LP00123456789012",
 	}
 }

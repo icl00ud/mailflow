@@ -4,11 +4,11 @@
 <p style="margin:0 0 18px;">Hi {{.FirstName}}, thank you for your order <b>{{.Order.Name}}</b>. Payment went through and we've started on it.</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #e3e3e1;border-bottom:1px solid #e3e3e1;margin:0 0 20px;">
 {{range .Items}}<tr>
-  {{if .Image}}<td width="84" style="padding:14px 14px 14px 0;"><img src="{{.Image}}" width="72" alt="{{.Title}}" style="display:block;border:0;"></td>{{end}}
+  <td width="84" style="padding:14px 14px 14px 0;">{{if .Image}}<img src="{{.Image}}" width="72" alt="{{.Title}}" style="display:block;border:0;">{{end}}</td>
   <td style="padding:14px 0;font-size:15px;"><b>{{.Title}}</b>{{if .Variant}}<br><span style="color:#6b6b6b;font-size:13px;">{{.Variant}}</span>{{end}}</td>
   <td align="right" style="padding:14px 0;color:#6b6b6b;font-size:14px;">× {{.Qty}}</td>
 </tr>{{end}}
-<tr><td {{if .Items}}colspan="2"{{end}} style="padding:12px 0;border-top:1px solid #e3e3e1;font-size:14px;color:#6b6b6b;">Order total</td><td align="right" style="padding:12px 0;border-top:1px solid #e3e3e1;"><b>{{.Order.Total}}</b></td></tr>
+<tr><td colspan="2" style="padding:12px 0;border-top:1px solid #e3e3e1;font-size:14px;color:#6b6b6b;">Order total</td><td align="right" style="padding:12px 0;border-top:1px solid #e3e3e1;"><b>{{.Order.Total}}</b></td></tr>
 </table>
 <p style="margin:0 0 8px;"><b>What happens next</b></p>
 <p style="margin:0 0 18px;">We'll prepare your watch, then email you the tracking number as soon as it ships. Shipping is free and tracked, and overseas deliveries usually take 7–16 days after dispatch. Every watch carries our 2-year warranty, and you have 30 days from delivery to return it.</p>

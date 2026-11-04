@@ -3,6 +3,7 @@
 package flow
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -67,12 +68,8 @@ type StoreCfg struct {
 	// StorefrontToken is the shop's PUBLIC Storefront API token (it ships in the storefront's JS);
 	// used only to read product photos for the emails.
 	StorefrontToken string `yaml:"storefront_token" json:"-"`
-	// SampleItem is the line item shown in previews and test sends.
-	SampleItem struct {
-		Title   string `yaml:"title" json:"title"`
-		Variant string `yaml:"variant" json:"variant"`
-		Image   string `yaml:"image" json:"image"`
-	} `yaml:"sample_item" json:"sample_item"`
+	// SampleVariants are catalog.json variant ids shown as the order lines in previews and test sends.
+	SampleVariants []string `yaml:"sample_variants" json:"sample_variants"`
 }
 
 type Trigger struct {
@@ -142,8 +139,11 @@ type Flow struct {
 	Steps []Step   `yaml:"steps" json:"steps"`
 
 	Dir string `yaml:"-" json:"-"`
-	loc *time.Location
-	cal bizhours.Calendar
+	// Catalog (optional <store>/catalog.json) maps a Shopify variant id to how the item is shown in emails
+	// (the storefront's own product name and photo instead of the checkout listing).
+	Catalog map[string]CatalogItem `yaml:"-" json:"-"`
+	loc     *time.Location
+	cal     bizhours.Calendar
 }
 
 func (f *Flow) Step(id string) (Step, bool) {
@@ -282,6 +282,13 @@ func (f *Flow) validate() error {
 	return nil
 }
 
+// CatalogItem is one entry of <store>/catalog.json.
+type CatalogItem struct {
+	Title   string `json:"title"`
+	Variant string `json:"variant,omitempty"`
+	Image   string `json:"image,omitempty"`
+}
+
 func Load(dir string) (*Flow, error) {
 	b, err := os.ReadFile(filepath.Join(dir, "flow.yaml"))
 	if err != nil {
@@ -292,6 +299,11 @@ func Load(dir string) (*Flow, error) {
 		return nil, fmt.Errorf("%s: %w", dir, err)
 	}
 	f.Dir = dir
+	if cb, err := os.ReadFile(filepath.Join(dir, "catalog.json")); err == nil {
+		if err := json.Unmarshal(cb, &f.Catalog); err != nil {
+			return nil, fmt.Errorf("%s/catalog.json: %w", dir, err)
+		}
+	}
 	if err := f.validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", dir, err)
 	}

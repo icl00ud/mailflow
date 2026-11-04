@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -310,6 +311,7 @@ func (s *Server) shopifyWebhook(w http.ResponseWriter, r *http.Request) {
 	case "orders/paid":
 		var o *store.Order
 		if o, herr = shopify.Order(f.Store.ID, body); herr == nil {
+			applyCatalog(f, o.Items)
 			if err := shopify.FillImages(ctx, f.Store.ShopifyDomain, f.Store.StorefrontToken, o.Items); err != nil {
 				s.Log.Warn("product photos", "order", o.Name, "err", err)
 			}
@@ -396,3 +398,18 @@ func SecretFromEnv(storeID string) string {
 
 // errNoSession means "not logged in" (no cookie, unknown or expired row).
 var errNoSession = errors.New("no session")
+
+// applyCatalog shows each line item the way the storefront sells it (name + photo from <store>/catalog.json).
+// Items without an entry keep the Shopify title and get the Shopify photo from FillImages.
+func applyCatalog(f *flow.Flow, items []store.Item) {
+	for i := range items {
+		c, ok := f.Catalog[strconv.FormatInt(items[i].VariantID, 10)]
+		if !ok {
+			continue
+		}
+		items[i].Title, items[i].Variant = c.Title, c.Variant
+		if c.Image != "" {
+			items[i].Image = c.Image
+		}
+	}
+}

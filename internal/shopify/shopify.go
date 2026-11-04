@@ -49,6 +49,7 @@ type orderPayload struct {
 	LineItems []struct {
 		Title        string `json:"title"`
 		VariantTitle string `json:"variant_title"`
+		VariantID    int64  `json:"variant_id"`
 		Quantity     int    `json:"quantity"`
 	} `json:"line_items"`
 }
@@ -83,7 +84,7 @@ func Order(storeID string, body []byte) (*store.Order, error) {
 		Total: formatTotal(p.Currency, p.TotalPrice),
 	}
 	for _, li := range p.LineItems {
-		o.Items = append(o.Items, store.Item{Title: li.Title, Variant: li.VariantTitle, Qty: li.Quantity})
+		o.Items = append(o.Items, store.Item{Title: li.Title, Variant: li.VariantTitle, VariantID: li.VariantID, Qty: li.Quantity})
 	}
 	return o, nil
 }

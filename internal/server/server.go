@@ -310,6 +310,9 @@ func (s *Server) shopifyWebhook(w http.ResponseWriter, r *http.Request) {
 	case "orders/paid":
 		var o *store.Order
 		if o, herr = shopify.Order(f.Store.ID, body); herr == nil {
+			if err := shopify.FillImages(ctx, f.Store.ShopifyDomain, f.Store.StorefrontToken, o.Items); err != nil {
+				s.Log.Warn("product photos", "order", o.Name, "err", err)
+			}
 			_, herr = s.Eng.OrderPaid(ctx, o)
 		}
 	case "orders/cancelled":

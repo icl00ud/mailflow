@@ -64,6 +64,15 @@ type StoreCfg struct {
 	Holidays   []string   `yaml:"holidays" json:"holidays"`
 	// ShopifyDomain is the *.myshopify.com host that webhooks identify the shop by.
 	ShopifyDomain string `yaml:"shopify_domain" json:"shopify_domain"`
+	// StorefrontToken is the shop's PUBLIC Storefront API token (it ships in the storefront's JS);
+	// used only to read product photos for the emails.
+	StorefrontToken string `yaml:"storefront_token" json:"-"`
+	// SampleItem is the line item shown in previews and test sends.
+	SampleItem struct {
+		Title   string `yaml:"title" json:"title"`
+		Variant string `yaml:"variant" json:"variant"`
+		Image   string `yaml:"image" json:"image"`
+	} `yaml:"sample_item" json:"sample_item"`
 }
 
 type Trigger struct {

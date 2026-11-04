@@ -22,7 +22,9 @@ type Item struct {
 	Title   string `json:"title"`
 	Variant string `json:"variant,omitempty"`
 	Image   string `json:"image,omitempty"`
-	Qty     int    `json:"qty"`
+	// VariantID is the Shopify variant id; used to look up the photo (shopify.FillImages).
+	VariantID int64 `json:"variant_id,omitempty"`
+	Qty       int   `json:"qty"`
 }
 
 type Order struct {

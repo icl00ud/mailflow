@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Title}}</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>
+  <b>mailflow</b>
+  <span class="spacer"></span>
+  <span class="pill">{{.Email}}</span>
+  <a class="pill" href="/">Painel</a>
+  <form method="post" action="/logout"><button class="ghost">sair</button></form>
+</header>
+<div class="wrap">
+  <div class="card">
+    <h2>Conta</h2>
+    <div class="rowline"><span class="muted">Email</span><span>{{.Email}}</span></div>
+    <div class="rowline"><span class="muted">Lojas</span>
+      <span>
+        {{range .Tenants}}<span class="chip">{{.Name}} · {{.Role}}</span>{{else}}<span class="muted">nenhuma</span>{{end}}
+      </span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Passkeys</h2>
+    {{if .Welcome}}<div class="ok">Senha salva. Adicione uma passkey para entrar sem digitar senha.</div>{{end}}
+    {{if .PasskeysEnabled}}
+      <p class="muted">Passkeys usam Face ID, Touch ID, Windows Hello ou uma chave de segurança. Elas ficam vinculadas ao domínio deste painel.</p>
+      <div id="passkey-list" class="muted">carregando…</div>
+      <div class="form" style="margin-top:14px">
+        <input id="passkey-name" placeholder="nome (ex.: MacBook)" size="24">
+        <button class="primary" id="passkey-add" type="button">Adicionar passkey</button>
+      </div>
+      <p class="muted" id="passkey-msg"></p>
+    {{else}}
+      <p class="muted">Passkeys não estão configuradas neste servidor.</p>
+    {{end}}
+  </div>
+
+  <div class="card">
+    <h2>Senha</h2>
+    <p class="muted">Para trocar a senha, peça um novo convite ao dono da loja — o link de convite redefine a senha.</p>
+  </div>
+</div>
+{{if .PasskeysEnabled}}<script src="/static/passkey.js"></script>{{end}}
+</body>
+</html>

@@ -33,11 +33,50 @@ human (click the red chip in the panel). Jobs found in `sending` after a restart
 go test ./...                                     # unit + contract tests
 TEST_DATABASE_URL=postgres://... go test ./...    # also runs the Postgres contract
 go run ./cmd/mailflow -check                      # validate flows + templates
-ADMIN_PASSWORD=dev go run ./cmd/mailflow          # in-memory store, dry-run sender, http://127.0.0.1:8080 (admin/dev)
+PUBLIC_ORIGIN=http://localhost:8080 COOKIE_SECURE=false \
+  go run ./cmd/mailflow                           # in-memory store, dry-run sender; login needs an invited user
 ```
 
-Env: `TRACK17_KEY` (17TRACK; unset = no automatic carrier events), `DATABASE_URL` (unset = memory), `SMTP_HOST/PORT/USER/PASS` (unset = dry-run log sender), `ADMIN_PASSWORD`,
-`SHOPIFY_WEBHOOK_SECRET_<STORE_ID>` (`ARMAN_CURREN`), `STORES_DIR`, `LISTEN_ADDR`.
+Env: `TRACK17_KEY` (17TRACK; unset = no automatic carrier events), `DATABASE_URL` (unset = memory),
+`SMTP_HOST/PORT/USER/PASS` (unset = dry-run log sender), `SHOPIFY_WEBHOOK_SECRET_<STORE_ID>` (`ARMAN_CURREN`),
+`STORES_DIR`, `LISTEN_ADDR`, and the panel/auth settings below.
+
+### panel + auth env
+
+| Var | Default | Meaning |
+|---|---|---|
+| `PUBLIC_ORIGIN` | `https://notify.armancurren.com` | Exact public origin of the panel. Every `POST/PUT/PATCH/DELETE` outside `/webhooks/*` must carry a matching `Origin` (or `Referer`) or it is rejected with 403. Also the WebAuthn origin. |
+| `COOKIE_SECURE` | `true` | `Secure` flag on the `mf_session` cookie. Set `false` only for plain-HTTP local runs. |
+| `WEBAUTHN_RP_ID` | host of `PUBLIC_ORIGIN` | Relying Party ID for passkeys. Must be the registrable domain (or host) the panel is served from; changing it invalidates existing passkeys. |
+| `WEBAUTHN_RP_NAME` | `mailflow` | Name shown by the browser in the passkey prompt. |
+
+`ADMIN_PASSWORD` and HTTP Basic auth are gone; `/healthz` stays public and the webhooks keep their own
+HMAC/17TRACK-signature auth.
+
+## Accounts, tenancy and onboarding
+
+- **Tenants own stores.** `tenants` + `tenant_stores` map each `stores/<id>` flow to one tenant; `users` +
+  `memberships` (role `owner` or `member`) decide who may see it. A session only ever lists, previews, tests,
+  creates orders in, or acts on the stores of its own tenants — anything else is a 404, so the panel does not
+  confirm that another tenant's store exists.
+- **Sessions** are server-side: the `mf_session` cookie holds a random token, the `sessions` table holds its
+  SHA-256, `HttpOnly`, `SameSite=Lax`, 30 days, `POST /logout` deletes the row.
+- **Passkeys** live in `webauthn_credentials`; register/list/delete on `/account`, and `/login` offers
+  usernameless ("discoverable") sign-in. Ceremony state is stored server-side, expires in 5 minutes and is
+  deleted when used, so a challenge cannot be replayed.
+- **No plaintext passwords are ever handed out.** Create the tenant and invite the person:
+
+```bash
+mailflow tenant add --id acme --name "Acme" --store acme-store
+mailflow invite --tenant acme --email someone@example.com [--role owner]
+# prints: https://notify.armancurren.com/invite/<one-time-token>
+```
+
+The invite is valid 48 hours and single use; the person sets a password (min 12 chars) and is then offered a
+passkey. Running `mailflow` with no subcommand starts the server as before.
+
+On first boot, if no tenant exists, the app seeds tenant `arman-curren` ("Arman Curren") owning store
+`arman-curren`, so the existing deployment keeps working.
 
 ## Shopify setup
 
@@ -52,4 +91,14 @@ after 2026-01-07, not monthly; after that it is paid. The panel's "Marcar" butto
 ## Adding a store
 
 Copy `stores/arman-curren` to `stores/<id>`, edit `flow.yaml` and the templates. `-check` fails on bad YAML, unknown
-triggers/conditions, `after_step` cycles, or a missing template.
+triggers/conditions, `after_step` cycles, or a missing template. Then attach it to a tenant with
+`mailflow tenant add --id <tenant> --name "<Name>" --store <id>` (or move an existing store by re-running it with the
+new tenant), and invite its owner.
+
+## Tests
+
+`go test ./...` covers password hashing (argon2id format, wrong password, hostile cost parameters), the login rate
+limit, session lifecycle (cookie flags, hashed storage, logout deleting the row, expiry), CSRF rejection, invite
+single-use/expiry/minimum length, tenant isolation (a tenant-B user gets 404 on tenant-A store endpoints), and the
+WebAuthn challenge rules. `internal/store` runs the same tenant/session/invite/passkey contract against both the
+in-memory store and Postgres when `TEST_DATABASE_URL` is set.

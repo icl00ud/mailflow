@@ -1,21 +1,22 @@
-// Package server exposes Shopify webhooks, the admin API and the flow panel.
+// Package server exposes Shopify webhooks, the authenticated panel and its API.
 package server
 
 import (
-	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
+
+	"github.com/icl00ud/mailflow/internal/auth"
 	"github.com/icl00ud/mailflow/internal/engine"
 	"github.com/icl00ud/mailflow/internal/flow"
 	"github.com/icl00ud/mailflow/internal/shopify"
@@ -23,18 +24,56 @@ import (
 	"github.com/icl00ud/mailflow/internal/track17"
 )
 
-//go:embed web/index.html
-var web embed.FS
+//go:embed web
+var webFS embed.FS
+
+// DefaultOrigin is the public panel origin. It is used for the CSRF check and
+// for passkey registration when PUBLIC_ORIGIN is not set, so a misconfigured
+// deployment fails closed (cross-origin posts stay rejected) instead of open.
+const DefaultOrigin = "https://notify.armancurren.com"
 
 type Server struct {
-	Eng           *engine.Engine
-	Log           *slog.Logger
-	AdminPassword string
+	Eng        *engine.Engine
+	Log        *slog.Logger
+	SenderName string
 	// ShopifySecret returns the webhook secret of a store ("" when not configured).
 	ShopifySecret func(storeID string) string
-	SenderName    string
 	// Track17Key authenticates 17TRACK pushes (empty disables /webhooks/17track).
 	Track17Key string
+
+	// PublicOrigin is scheme://host of the panel; every state-changing request
+	// outside /webhooks must come from it.
+	PublicOrigin string
+	// CookieSecure sets the Secure flag on the session cookie (default true in main).
+	CookieSecure bool
+	// WebAuthn is nil when passkeys are not configured; the endpoints then 503.
+	WebAuthn *webauthn.WebAuthn
+	// Now is swappable in tests.
+	Now func() time.Time
+	// Limiter throttles password logins.
+	Limiter *auth.Limiter
+}
+
+func (s *Server) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
+func (s *Server) origin() string {
+	o := strings.TrimSpace(s.PublicOrigin)
+	if o == "" {
+		o = DefaultOrigin
+	}
+	return strings.TrimRight(strings.ToLower(o), "/")
+}
+
+func (s *Server) limiter() *auth.Limiter {
+	if s.Limiter == nil {
+		s.Limiter = auth.NewLimiter(10, 15*time.Minute)
+	}
+	return s.Limiter
 }
 
 func (s *Server) Handler() http.Handler {
@@ -49,55 +88,130 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /webhooks/shopify", s.shopifyWebhook)
 	mux.HandleFunc("POST /webhooks/17track", s.track17Webhook)
 
-	admin := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.auth(h)) }
-	admin("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		b, _ := web.ReadFile("web/index.html")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(b)
+	// Public: login and invite acceptance. Both are CSRF-checked in the middleware.
+	mux.HandleFunc("GET /login", s.loginPage)
+	mux.HandleFunc("POST /login", s.loginPost)
+	mux.HandleFunc("GET /invite/{token}", s.invitePage)
+	mux.HandleFunc("POST /invite/{token}", s.invitePost)
+	mux.HandleFunc("POST /api/passkeys/login/begin", s.passkeyLoginBegin)
+	mux.HandleFunc("POST /api/passkeys/login/finish", s.passkeyLoginFinish)
+	mux.Handle("GET /static/", s.static())
+
+	// Authenticated panel.
+	mux.HandleFunc("GET /{$}", s.require(s.panelPage))
+	mux.HandleFunc("GET /account", s.require(s.accountPage))
+	mux.HandleFunc("POST /logout", s.require(s.logout))
+	mux.HandleFunc("GET /api/me", s.require(s.apiMe))
+	mux.HandleFunc("GET /api/flows", s.require(s.apiFlows))
+	mux.HandleFunc("POST /api/flows/{store}/steps/{step}/status", s.require(s.apiStepStatus))
+	mux.HandleFunc("GET /api/flows/{store}/steps/{step}/preview", s.require(s.apiPreview))
+	mux.HandleFunc("POST /api/flows/{store}/steps/{step}/test", s.require(s.apiTest))
+	mux.HandleFunc("GET /api/orders", s.require(s.apiOrders))
+	mux.HandleFunc("POST /api/orders", s.require(s.apiCreateOrder))
+	mux.HandleFunc("POST /api/orders/{id}/tracking", s.require(s.apiTracking))
+	mux.HandleFunc("POST /api/orders/{id}/events", s.require(s.apiEvent))
+	mux.HandleFunc("POST /api/orders/{id}/cancel", s.require(s.apiCancel))
+	mux.HandleFunc("POST /api/jobs/{id}/retry", s.require(s.apiRetry))
+	mux.HandleFunc("GET /api/passkeys", s.require(s.apiPasskeys))
+	mux.HandleFunc("POST /api/passkeys/register/begin", s.require(s.passkeyRegisterBegin))
+	mux.HandleFunc("POST /api/passkeys/register/finish", s.require(s.passkeyRegisterFinish))
+	mux.HandleFunc("POST /api/passkeys/{id}/delete", s.require(s.apiPasskeyDelete))
+
+	var h http.Handler = mux
+	h = s.securityHeaders(h)
+	h = s.csrf(h)
+	return s.logRequests(h)
+}
+
+// securityHeaders applies the panel's browser hardening. The markup carries no
+// inline <script>; everything executable is served from /static. 'unsafe-inline'
+// is allowed for styles only, because the email preview is rendered as a
+// sandboxed srcdoc frame that inherits this policy.
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; form-action 'self'; "+
+			"frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'")
+		next.ServeHTTP(w, r)
 	})
-	admin("GET /api/flows", s.apiFlows)
-	admin("POST /api/flows/{store}/steps/{step}/status", s.apiStepStatus)
-	admin("GET /api/flows/{store}/steps/{step}/preview", s.apiPreview)
-	admin("POST /api/flows/{store}/steps/{step}/test", s.apiTest)
-	admin("GET /api/orders", s.apiOrders)
-	admin("POST /api/orders", s.apiCreateOrder)
-	admin("POST /api/orders/{id}/tracking", s.apiTracking)
-	admin("POST /api/orders/{id}/events", s.apiEvent)
-	admin("POST /api/orders/{id}/cancel", s.apiCancel)
-	admin("POST /api/jobs/{id}/retry", s.apiRetry)
-	return s.logRequests(mux)
+}
+
+// csrf rejects every state-changing panel request that did not come from
+// PUBLIC_ORIGIN. Webhooks authenticate themselves with HMAC/signature and are
+// exempt. Origin wins over Referer when both are present.
+func (s *Server) csrf(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !stateChanging(r.Method) || strings.HasPrefix(r.URL.Path, "/webhooks/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if origin, ok := s.requestOrigin(r); !ok || origin != s.origin() {
+			s.Log.Warn("csrf rejected", "path", r.URL.Path, "origin", r.Header.Get("Origin"), "referer", r.Header.Get("Referer"))
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func stateChanging(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	}
+	return false
+}
+
+// requestOrigin returns the normalised origin of the request, preferring Origin.
+func (s *Server) requestOrigin(r *http.Request) (string, bool) {
+	if o := r.Header.Get("Origin"); o != "" {
+		return normaliseOrigin(o)
+	}
+	if ref := r.Header.Get("Referer"); ref != "" {
+		return normaliseOrigin(ref)
+	}
+	return "", false
+}
+
+func normaliseOrigin(raw string) (string, bool) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" || raw == "null" {
+		return "", false
+	}
+	return strings.ToLower(u.Scheme + "://" + u.Host), true
 }
 
 func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		if r.URL.Path != "/healthz" {
+		if r.URL.Path != "/healthz" && !strings.HasPrefix(r.URL.Path, "/static/") {
 			s.Log.Info("http", "method", r.Method, "path", r.URL.Path, "ms", time.Since(start).Milliseconds())
 		}
 	})
 }
 
-// auth is HTTP Basic (user "admin"). State-changing calls must be JSON so a
-// cross-site form post cannot ride the browser's cached credentials.
-func (s *Server) auth(next http.HandlerFunc) http.Handler {
+func (s *Server) static() http.Handler {
+	sub, err := fs.Sub(webFS, "web/static")
+	if err != nil {
+		panic(err)
+	}
+	return http.StripPrefix("/static/", cacheStatic(http.FileServerFS(sub)))
+}
+
+func cacheStatic(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, pass, ok := r.BasicAuth()
-		if !ok || subtle.ConstantTimeCompare([]byte(pass), []byte(s.AdminPassword)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="mailflow"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		if r.Method == http.MethodPost && !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-			http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
-			return
-		}
-		next(w, r)
+		w.Header().Set("Cache-Control", "public, max-age=300")
+		next.ServeHTTP(w, r)
 	})
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }
@@ -218,223 +332,6 @@ func (s *Server) track17Webhook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// ---- panel API ----
-
-type stepView struct {
-	flow.Step
-	Effective string         `json:"effective"` // on | off | draft
-	Timing    string         `json:"timing"`
-	Counts    map[string]int `json:"counts"`
-}
-
-type flowView struct {
-	Store  flow.StoreCfg `json:"store"`
-	Steps  []stepView    `json:"steps"`
-	Sender string        `json:"sender"`
-}
-
-func (s *Server) apiFlows(w http.ResponseWriter, r *http.Request) {
-	var out []flowView
-	ids := make([]string, 0, len(s.Eng.Flows))
-	for id := range s.Eng.Flows {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		f := s.Eng.Flows[id]
-		over, err := s.Eng.Store.StepOverrides(r.Context(), id)
-		if err == nil {
-			var counts store.StepCounts
-			if counts, err = s.Eng.Store.StepCounts(r.Context(), id); err == nil {
-				fv := flowView{Store: f.Store, Sender: s.SenderName}
-				for _, st := range f.Steps {
-					eff := st.Status
-					if v, ok := over[st.ID]; ok && st.Status != flow.StatusDraft {
-						eff = v
-					}
-					fv.Steps = append(fv.Steps, stepView{Step: st, Effective: eff, Timing: st.Timing(), Counts: counts[st.ID]})
-				}
-				out = append(out, fv)
-				continue
-			}
-		}
-		fail(w, 500, err)
-		return
-	}
-	writeJSON(w, 200, out)
-}
-
-func (s *Server) apiStepStatus(w http.ResponseWriter, r *http.Request) {
-	f, ok := s.Eng.Flows[r.PathValue("store")]
-	if !ok {
-		fail(w, 404, errors.New("unknown store"))
-		return
-	}
-	st, ok := f.Step(r.PathValue("step"))
-	if !ok || st.Status == flow.StatusDraft {
-		fail(w, 400, errors.New("unknown step, or a draft (write the copy first)"))
-		return
-	}
-	var in struct{ Status string }
-	if err := decode(r, &in); err != nil || (in.Status != flow.StatusOn && in.Status != flow.StatusOff) {
-		fail(w, 400, errors.New(`status must be "on" or "off"`))
-		return
-	}
-	if err := s.Eng.Store.SetStepOverride(r.Context(), f.Store.ID, st.ID, in.Status); err != nil {
-		fail(w, 500, err)
-		return
-	}
-	s.Log.Info("step status changed", "store", f.Store.ID, "step", st.ID, "status", in.Status)
-	writeJSON(w, 200, map[string]string{"status": in.Status})
-}
-
-func (s *Server) apiPreview(w http.ResponseWriter, r *http.Request) {
-	subject, body, err := s.Eng.Preview(r.PathValue("store"), r.PathValue("step"))
-	if err != nil {
-		fail(w, 400, err)
-		return
-	}
-	w.Header().Set("X-Subject", subject)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src * data:; style-src 'unsafe-inline'")
-	io.WriteString(w, body)
-}
-
-func (s *Server) apiTest(w http.ResponseWriter, r *http.Request) {
-	var in struct{ To string }
-	if err := decode(r, &in); err != nil || !strings.Contains(in.To, "@") {
-		fail(w, 400, errors.New("`to` must be an email address"))
-		return
-	}
-	if err := s.Eng.TestSend(r.Context(), r.PathValue("store"), r.PathValue("step"), in.To); err != nil {
-		fail(w, 400, err)
-		return
-	}
-	writeJSON(w, 200, map[string]string{"sent_to": in.To, "via": s.SenderName})
-}
-
-type orderView struct {
-	store.Order
-	Jobs   []store.Job   `json:"jobs"`
-	Events []store.Event `json:"events"`
-}
-
-func (s *Server) apiOrders(w http.ResponseWriter, r *http.Request) {
-	orders, err := s.Eng.Store.ListOrders(r.Context(), r.URL.Query().Get("store"), 50)
-	if err != nil {
-		fail(w, 500, err)
-		return
-	}
-	out := make([]orderView, 0, len(orders))
-	for _, o := range orders {
-		jobs, _ := s.Eng.Store.OrderJobs(r.Context(), o.ID)
-		evs, _ := s.Eng.Store.Events(r.Context(), o.ID)
-		out = append(out, orderView{Order: o, Jobs: jobs, Events: evs})
-	}
-	writeJSON(w, 200, out)
-}
-
-// apiCreateOrder registers a manual order — for testing the journey without Shopify.
-func (s *Server) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Store, Email, Name, Customer, Item, Total string
-	}
-	if err := decode(r, &in); err != nil {
-		fail(w, 400, err)
-		return
-	}
-	if _, ok := s.Eng.Flows[in.Store]; !ok {
-		fail(w, 400, errors.New("unknown store"))
-		return
-	}
-	now := s.Eng.Now()
-	if in.Item == "" {
-		in.Item = "Azure Chronograph Leather"
-	}
-	if in.Total == "" {
-		in.Total = "$104.99"
-	}
-	o := &store.Order{StoreID: in.Store, ExternalID: "manual-" + strconv.FormatInt(now.UnixNano(), 36),
-		Name: in.Name, Email: in.Email, CustomerName: in.Customer, Currency: "USD", Total: in.Total, Country: "US",
-		PaidAt: now, Items: []store.Item{{Title: in.Item, Qty: 1}}}
-	if o.Name == "" {
-		o.Name = "#T" + strconv.FormatInt(now.Unix()%100000, 10)
-	}
-	if _, err := s.Eng.OrderPaid(r.Context(), o); err != nil {
-		fail(w, 400, err)
-		return
-	}
-	writeJSON(w, 201, o)
-}
-
-func orderID(r *http.Request) (int64, error) { return strconv.ParseInt(r.PathValue("id"), 10, 64) }
-
-func (s *Server) apiTracking(w http.ResponseWriter, r *http.Request) {
-	id, err := orderID(r)
-	var in struct{ Number, Carrier, URL string }
-	if err != nil || decode(r, &in) != nil {
-		fail(w, 400, errors.New("bad request"))
-		return
-	}
-	if err := s.Eng.Dispatched(r.Context(), id, strings.TrimSpace(in.Number), in.Carrier, in.URL, time.Now()); err != nil {
-		fail(w, 400, err)
-		return
-	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
-}
-
-func (s *Server) apiEvent(w http.ResponseWriter, r *http.Request) {
-	id, err := orderID(r)
-	var in struct{ Event, Label string }
-	if err != nil || decode(r, &in) != nil {
-		fail(w, 400, errors.New("bad request"))
-		return
-	}
-	if !validEvent(in.Event) {
-		fail(w, 400, fmt.Errorf("unknown event %q", in.Event))
-		return
-	}
-	if err := s.Eng.TrackingEvent(r.Context(), id, in.Event, in.Label, "panel", time.Now()); err != nil {
-		fail(w, 400, err)
-		return
-	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
-}
-
-func validEvent(e string) bool {
-	switch e {
-	case flow.EvInTransit, flow.EvArrivedCountry, flow.EvOutForDelivery, flow.EvReadyForPickup, flow.EvDelivered, flow.EvException:
-		return true
-	}
-	return false
-}
-
-func (s *Server) apiCancel(w http.ResponseWriter, r *http.Request) {
-	id, err := orderID(r)
-	if err != nil {
-		fail(w, 400, err)
-		return
-	}
-	if err := s.Eng.CancelOrder(r.Context(), id, "canceled from the panel"); err != nil {
-		fail(w, 500, err)
-		return
-	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
-}
-
-func (s *Server) apiRetry(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		fail(w, 400, err)
-		return
-	}
-	if err := s.Eng.Store.Retry(r.Context(), id, s.Eng.Now()); err != nil {
-		fail(w, 500, err)
-		return
-	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
-}
-
 // SecretFromEnv resolves SHOPIFY_WEBHOOK_SECRET_<STORE_ID>, falling back to SHOPIFY_WEBHOOK_SECRET.
 func SecretFromEnv(storeID string) string {
 	key := "SHOPIFY_WEBHOOK_SECRET_" + strings.ToUpper(strings.ReplaceAll(storeID, "-", "_"))
@@ -443,3 +340,6 @@ func SecretFromEnv(storeID string) string {
 	}
 	return os.Getenv("SHOPIFY_WEBHOOK_SECRET")
 }
+
+// errNoSession means "not logged in" (no cookie, unknown or expired row).
+var errNoSession = errors.New("no session")

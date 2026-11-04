@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Title}}</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="auth">
+  <h1>mailflow</h1>
+  <p class="sub">Entre para gerenciar as jornadas de e-mail das suas lojas.</p>
+  {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="{{.Next}}">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="username" value="{{.Email}}" required>
+    <label for="password">Senha</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button class="primary" type="submit">Entrar</button>
+  </form>
+  {{if .PasskeysEnabled}}
+  <div class="sep">ou</div>
+  <button id="passkey-login" type="button">Entrar com uma passkey</button>
+  <p class="muted" id="passkey-msg"></p>
+  {{end}}
+  <p class="muted">Primeiro acesso? Use o link de convite que você recebeu.</p>
+</div>
+{{if .PasskeysEnabled}}<script src="/static/passkey.js"></script>{{end}}
+</body>
+</html>

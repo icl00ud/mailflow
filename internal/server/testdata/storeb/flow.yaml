@@ -1,0 +1,19 @@
+# Second store used only by the tests, to prove tenant isolation: its flow
+# exists, but only members of tenant "beta" may see or touch it.
+store:
+  id: store-b
+  name: Store B
+  from: "Store B <hello@store-b.test>"
+  timezone: America/New_York
+  shopify_domain: store-b.myshopify.com
+  send_window: {start: 8, end: 21}
+
+steps:
+  - id: "1"
+    title: Order confirmed
+    subject: "Your Store B order {{.Order.Name}} is confirmed"
+    template: 01-confirmed
+    status: on
+    trigger: {on: order_paid}
+    delay: {hours: 0}
+    immediate: true

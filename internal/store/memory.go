@@ -300,6 +300,18 @@ func (m *Memory) StepCounts(_ context.Context, storeID string) (StepCounts, erro
 	return out, nil
 }
 
+func (m *Memory) StepHeldCounts(_ context.Context, storeID string) (map[string]int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]int{}
+	for _, j := range m.jobs {
+		if j.StoreID == storeID && j.Status == JobPending && j.Held {
+			out[j.StepID]++
+		}
+	}
+	return out, nil
+}
+
 func (m *Memory) StepOverrides(_ context.Context, storeID string) (map[string]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -1,0 +1,8 @@
+.git
+.github
+web/node_modules
+web/dist
+internal/server/web/app/assets
+internal/server/web/app/index.html
+bin
+*.log

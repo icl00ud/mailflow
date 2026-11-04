@@ -76,6 +76,7 @@ func usage(w *os.File) {
 	fmt.Fprint(w, `mailflow
 
   mailflow                     run the panel and the email engine
+  mailflow -demo               in-memory demo with fake orders + one-time invite URL
   mailflow -check              validate flows and templates, then exit
   mailflow invite --tenant ID --email EMAIL [--role owner|member]
   mailflow tenant add --id ID --name NAME --store STORE_ID
@@ -89,8 +90,17 @@ func serve() {
 	storesDir := flag.String("stores", env("STORES_DIR", "stores"), "directory with <store>/flow.yaml")
 	addr := flag.String("addr", env("LISTEN_ADDR", ":8080"), "listen address")
 	check := flag.Bool("check", false, "validate stores and templates, then exit")
+	demo := flag.Bool("demo", false, "run an in-memory demo with fake orders and print a one-time invite URL")
 	flag.Parse()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	if *demo {
+		if os.Getenv("DATABASE_URL") != "" {
+			log.Error("-demo refuses to run with DATABASE_URL set (it would mix demo data into a real database)")
+			os.Exit(1)
+		}
+		*addr = ":8080"
+		log.Warn("demo mode: in-memory store, log sender, PUBLIC_ORIGIN=http://localhost:8080, COOKIE_SECURE=false")
+	}
 
 	flows, err := flow.LoadAll(*storesDir)
 	if err != nil {
@@ -113,7 +123,9 @@ func serve() {
 	defer stop()
 
 	var st store.Store
-	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+	if *demo {
+		st = store.NewMemory()
+	} else if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		pg, err := store.NewPostgres(ctx, dsn)
 		if err != nil {
 			log.Error("postgres", "err", err)
@@ -136,6 +148,17 @@ func serve() {
 	}
 
 	origin := publicOrigin()
+	cookieSecure := boolEnv("COOKIE_SECURE", true)
+	if *demo {
+		origin = "http://localhost:8080"
+		cookieSecure = false
+		if err := os.Setenv("PUBLIC_ORIGIN", origin); err != nil {
+			log.Warn("set PUBLIC_ORIGIN", "err", err)
+		}
+		if err := os.Setenv("COOKIE_SECURE", "false"); err != nil {
+			log.Warn("set COOKIE_SECURE", "err", err)
+		}
+	}
 	u, err := url.Parse(origin)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		log.Error("PUBLIC_ORIGIN is not a full origin (https://host)", "value", origin)
@@ -151,11 +174,11 @@ func serve() {
 		log.Error("webauthn config", "err", err, "rp_id", rpID, "origin", origin)
 		os.Exit(1)
 	}
-	log.Info("panel auth", "origin", origin, "webauthn_rp_id", rpID, "cookie_secure", boolEnv("COOKIE_SECURE", true))
+	log.Info("panel auth", "origin", origin, "webauthn_rp_id", rpID, "cookie_secure", cookieSecure)
 
 	var sender mail.Sender = mail.LogSender{Log: log}
-	if host := os.Getenv("SMTP_HOST"); host != "" {
-		sender = mail.SMTP{Host: host, Port: env("SMTP_PORT", "587"), User: os.Getenv("SMTP_USER"), Pass: os.Getenv("SMTP_PASS")}
+	if !*demo && os.Getenv("SMTP_HOST") != "" {
+		sender = mail.SMTP{Host: os.Getenv("SMTP_HOST"), Port: env("SMTP_PORT", "587"), User: os.Getenv("SMTP_USER"), Pass: os.Getenv("SMTP_PASS")}
 	}
 	log.Info("email sender", "kind", sender.Name())
 
@@ -163,12 +186,22 @@ func serve() {
 	srv := &server.Server{Eng: eng, Log: log, SenderName: sender.Name(),
 		ShopifySecret: server.SecretFromEnv,
 		PublicOrigin:  origin,
-		CookieSecure:  boolEnv("COOKIE_SECURE", true),
+		CookieSecure:  cookieSecure,
 		WebAuthn:      wa,
 		Limiter:       auth.NewLimiter(10, 15*time.Minute),
 	}
 	if u.Scheme != "https" {
 		log.Warn("PUBLIC_ORIGIN is not https: the session cookie will not be Secure unless COOKIE_SECURE is set", "origin", origin)
+	}
+
+	if *demo {
+		inviteURL, err := seedDemo(ctx, st, eng, origin)
+		if err != nil {
+			log.Error("seed demo", "err", err)
+			os.Exit(1)
+		}
+		fmt.Printf("demo invite (one-time, 48h): %s\n", inviteURL)
+		fmt.Printf("login page: http://localhost:8080/login\n")
 	}
 
 	if k := os.Getenv("TRACK17_KEY"); k != "" {

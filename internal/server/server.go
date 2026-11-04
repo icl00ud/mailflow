@@ -97,9 +97,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/passkeys/login/finish", s.passkeyLoginFinish)
 	mux.Handle("GET /static/", s.static())
 
-	// Authenticated panel.
-	mux.HandleFunc("GET /{$}", s.require(s.panelPage))
-	mux.HandleFunc("GET /account", s.require(s.accountPage))
+	// Authenticated panel: the SPA shell serves every client route.
+	mux.HandleFunc("GET /{$}", s.require(s.spaIndex))
+	mux.HandleFunc("GET /flow", s.require(s.spaIndex))
+	mux.HandleFunc("GET /orders", s.require(s.spaIndex))
+	mux.HandleFunc("GET /account", s.require(s.spaIndex))
+	mux.Handle("GET /app/assets/", s.appAssets())
+	mux.Handle("GET /app/", s.appShell())
 	mux.HandleFunc("POST /logout", s.require(s.logout))
 	mux.HandleFunc("GET /api/me", s.require(s.apiMe))
 	mux.HandleFunc("GET /api/flows", s.require(s.apiFlows))
@@ -123,18 +127,19 @@ func (s *Server) Handler() http.Handler {
 	return s.logRequests(h)
 }
 
-// securityHeaders applies the panel's browser hardening. The markup carries no
-// inline <script>; everything executable is served from /static. 'unsafe-inline'
-// is allowed for styles only, because the email preview is rendered as a
-// sandboxed srcdoc frame that inherits this policy.
+// securityHeaders applies the panel's browser hardening. The SPA bundle is
+// served from /app; there is no inline <script> and no eval. 'unsafe-inline'
+// is allowed for styles only (Radix and React Flow set style attributes, and
+// the email preview frame needs the store's own CSS).
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
-		h.Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; form-action 'self'; "+
-			"frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'")
+		h.Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; "+
+			"frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; "+
+			"connect-src 'self'; font-src 'self' data:")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -188,7 +193,7 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		if r.URL.Path != "/healthz" && !strings.HasPrefix(r.URL.Path, "/static/") {
+		if r.URL.Path != "/healthz" && !strings.HasPrefix(r.URL.Path, "/static/") && !strings.HasPrefix(r.URL.Path, "/app/") {
 			s.Log.Info("http", "method", r.Method, "path", r.URL.Path, "ms", time.Since(start).Milliseconds())
 		}
 	})
@@ -200,6 +205,51 @@ func (s *Server) static() http.Handler {
 		panic(err)
 	}
 	return http.StripPrefix("/static/", cacheStatic(http.FileServerFS(sub)))
+}
+
+// spaIndex serves the built React shell for every authenticated client route.
+// The file is small and must never be cached: it points at content-hashed assets.
+func (s *Server) spaIndex(w http.ResponseWriter, r *http.Request) {
+	page, err := fs.ReadFile(webFS, "web/app/index.html")
+	if err != nil {
+		s.Log.Error("spa index missing", "err", err)
+		http.Error(w, "panel bundle missing; run npm run build in web/", http.StatusServiceUnavailable)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Cache-Control", "no-store")
+	_, _ = w.Write(page)
+}
+
+func (s *Server) appAssets() http.Handler {
+	sub, err := fs.Sub(webFS, "web/app")
+	if err != nil {
+		panic(err)
+	}
+	return http.StripPrefix("/app/", cacheImmutable(http.FileServerFS(sub)))
+}
+
+func (s *Server) appShell() http.Handler {
+	sub, err := fs.Sub(webFS, "web/app")
+	if err != nil {
+		panic(err)
+	}
+	return http.StripPrefix("/app/", noStore(http.FileServerFS(sub)))
+}
+
+func cacheImmutable(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func cacheStatic(next http.Handler) http.Handler {

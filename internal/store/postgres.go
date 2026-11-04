@@ -254,6 +254,24 @@ func (p *Postgres) StepCounts(ctx context.Context, storeID string) (StepCounts, 
 	return out, rows.Err()
 }
 
+func (p *Postgres) StepHeldCounts(ctx context.Context, storeID string) (map[string]int, error) {
+	rows, err := p.pool.Query(ctx, `SELECT step_id, count(*) FROM jobs WHERE store_id=$1 AND status='pending' AND held GROUP BY 1`, storeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var step string
+		var n int
+		if err := rows.Scan(&step, &n); err != nil {
+			return nil, err
+		}
+		out[step] = n
+	}
+	return out, rows.Err()
+}
+
 func (p *Postgres) StepOverrides(ctx context.Context, storeID string) (map[string]string, error) {
 	rows, err := p.pool.Query(ctx, `SELECT step_id, status FROM step_overrides WHERE store_id=$1`, storeID)
 	if err != nil {

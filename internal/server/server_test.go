@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -791,6 +792,86 @@ func (f *fixture) mustUser(t *testing.T, email string) *store.User {
 		t.Fatal(err)
 	}
 	return u
+}
+
+func TestSPAShellAndHashedAssets(t *testing.T) {
+	f := newFixture(t)
+	f.user(t, "owner@example.com", tenantA, store.RoleOwner)
+	cookie := f.login(t, "owner@example.com")
+
+	for _, path := range []string{"/", "/flow", "/orders", "/account"} {
+		resp := f.req(t, "GET", path, "", cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s -> %d", path, resp.StatusCode)
+		}
+		if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+			t.Fatalf("GET %s content-type=%q", path, ct)
+		}
+		if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
+			t.Fatalf("GET %s cache-control=%q want no-store", path, cc)
+		}
+		page := body(t, resp)
+		if !strings.Contains(page, "/app/assets/") {
+			t.Fatalf("GET %s does not reference the hashed bundle: %q", path, page)
+		}
+	}
+
+	assets, err := fs.Glob(webFS, "web/app/assets/*.js")
+	if err != nil || len(assets) == 0 {
+		t.Fatalf("embedded bundle has no js assets (err=%v)", err)
+	}
+	assetPath := "/app/" + strings.TrimPrefix(assets[0], "web/app/")
+	resp := f.reqH(t, "GET", assetPath, "", "", false)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s -> %d", assetPath, resp.StatusCode)
+	}
+	if cc := resp.Header.Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+		t.Fatalf("asset cache-control=%q want immutable", cc)
+	}
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") {
+		t.Fatalf("asset CSP=%q", csp)
+	}
+}
+
+func TestFlowReportsHeldCounts(t *testing.T) {
+	f := newFixture(t)
+	f.user(t, "owner@example.com", tenantA, store.RoleOwner)
+	cookie := f.login(t, "owner@example.com")
+
+	o := &store.Order{StoreID: storeA, ExternalID: "held-1", Email: "a@b.co", Name: "#H1", PaidAt: f.eng.Now()}
+	if _, err := f.eng.OrderPaid(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	j := &store.Job{OrderID: o.ID, StoreID: storeA, StepID: "3", DueAt: f.eng.Now()}
+	if _, err := f.st.Schedule(context.Background(), j); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.Defer(context.Background(), j.ID, f.eng.Now(), true, "waiting for a real tracking number"); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := f.req(t, "GET", "/api/flows", "", cookie)
+	var flows []struct {
+		Steps []struct {
+			ID   string `json:"id"`
+			Held int    `json:"held"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal([]byte(body(t, resp)), &flows); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, s := range flows[0].Steps {
+		if s.ID == "3" {
+			found = true
+			if s.Held != 1 {
+				t.Fatalf("step 3 held=%d want 1", s.Held)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("step 3 missing from /api/flows")
+	}
 }
 
 func TestTenantSeededFromEmptyStore(t *testing.T) {

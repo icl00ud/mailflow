@@ -61,14 +61,3 @@ func (s *Server) renderStatus(w http.ResponseWriter, name string, data pageData,
 		s.Log.Error("render", "template", name, "err", err)
 	}
 }
-
-func (s *Server) panelPage(w http.ResponseWriter, r *http.Request) {
-	p := principalFrom(r)
-	s.render(w, "index.html", pageData{Title: "mailflow", Email: p.User.Email, Tenants: p.Tenants})
-}
-
-func (s *Server) accountPage(w http.ResponseWriter, r *http.Request) {
-	p := principalFrom(r)
-	s.render(w, "account.html", pageData{Title: "Conta — mailflow", Email: p.User.Email, Tenants: p.Tenants,
-		Welcome: r.URL.Query().Get("welcome") == "1", PasskeysEnabled: s.WebAuthn != nil, PasswordMin: minPassword})
-}

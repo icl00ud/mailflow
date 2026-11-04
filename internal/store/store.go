@@ -106,6 +106,8 @@ type Store interface {
 	JobByID(ctx context.Context, id int64) (*Job, error)
 	OrderJobs(ctx context.Context, orderID int64) ([]Job, error)
 	StepCounts(ctx context.Context, storeID string) (StepCounts, error)
+	// StepHeldCounts counts pending jobs that are held per step ("retido").
+	StepHeldCounts(ctx context.Context, storeID string) (map[string]int, error)
 
 	StepOverrides(ctx context.Context, storeID string) (map[string]string, error)
 	SetStepOverride(ctx context.Context, storeID, stepID, status string) error

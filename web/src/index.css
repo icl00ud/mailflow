@@ -1,0 +1,169 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 24% 98%;
+    --foreground: 224 26% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 26% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 26% 12%;
+    --primary: 243 75% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 16% 94%;
+    --secondary-foreground: 224 20% 22%;
+    --muted: 220 16% 95%;
+    --muted-foreground: 220 10% 44%;
+    --accent: 243 65% 96%;
+    --accent-foreground: 243 55% 38%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 15% 90%;
+    --input: 220 15% 87%;
+    --ring: 243 75% 58%;
+    --success: 154 62% 32%;
+    --success-foreground: 0 0% 100%;
+    --warning: 32 92% 40%;
+    --warning-foreground: 0 0% 100%;
+    --info: 200 88% 38%;
+    --info-foreground: 0 0% 100%;
+    --radius: 0.75rem;
+    color-scheme: light;
+  }
+
+  .dark {
+    --background: 224 25% 7.5%;
+    --foreground: 220 22% 96%;
+    --card: 224 22% 10.5%;
+    --card-foreground: 220 22% 96%;
+    --popover: 224 22% 11%;
+    --popover-foreground: 220 22% 96%;
+    --primary: 243 85% 69%;
+    --primary-foreground: 245 45% 10%;
+    --secondary: 223 17% 16%;
+    --secondary-foreground: 220 18% 92%;
+    --muted: 223 17% 15%;
+    --muted-foreground: 220 11% 64%;
+    --accent: 243 32% 21%;
+    --accent-foreground: 243 85% 88%;
+    --destructive: 0 68% 56%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 223 16% 19%;
+    --input: 223 16% 23%;
+    --ring: 243 85% 69%;
+    --success: 154 55% 47%;
+    --success-foreground: 154 40% 8%;
+    --warning: 38 92% 56%;
+    --warning-foreground: 32 60% 10%;
+    --info: 199 88% 58%;
+    --info-foreground: 200 60% 8%;
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.22);
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring) / 0.65);
+    outline-offset: 2px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.32) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: hsl(var(--muted-foreground) / 0.28);
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  .surface-grid {
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.5) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.5) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 100%);
+  }
+
+  .stat-value {
+    @apply text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl;
+  }
+}
+
+/* React Flow: make the canvas part of the design system instead of a widget. */
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-stroke: hsl(var(--muted-foreground) / 0.45);
+  --xy-edge-stroke-selected: hsl(var(--primary));
+  --xy-connectionline-stroke: hsl(var(--primary));
+  --xy-attribution-background-color: transparent;
+}
+.react-flow__attribution {
+  display: none;
+}
+.react-flow__node {
+  font-family: inherit;
+}
+.react-flow__handle {
+  width: 7px;
+  height: 7px;
+  border: 2px solid hsl(var(--background));
+  background: hsl(var(--muted-foreground) / 0.55);
+}
+.react-flow__controls {
+  border-radius: calc(var(--radius) - 2px);
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
+}
+.react-flow__controls-button {
+  background: hsl(var(--card));
+  border-bottom: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+  width: 28px;
+  height: 28px;
+}
+.react-flow__controls-button:hover {
+  background: hsl(var(--muted));
+}
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+.react-flow__edge-path {
+  stroke-width: 1.6;
+}
+.react-flow__edge.animated .react-flow__edge-path {
+  stroke-dasharray: 5;
+  animation: dashdraw 0.7s linear infinite;
+}
+@keyframes dashdraw {
+  to {
+    stroke-dashoffset: -10;
+  }
+}

@@ -3,29 +3,73 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>{{.Title}}</title>
-<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/auth.css">
 </head>
 <body>
-<div class="auth">
-  <h1>mailflow</h1>
-  <p class="sub">Entre para gerenciar as jornadas de e-mail das suas lojas.</p>
-  {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
-  <form method="post" action="/login">
-    <input type="hidden" name="next" value="{{.Next}}">
-    <label for="email">Email</label>
-    <input id="email" name="email" type="email" autocomplete="username" value="{{.Email}}" required>
-    <label for="password">Senha</label>
-    <input id="password" name="password" type="password" autocomplete="current-password" required>
-    <button class="primary" type="submit">Entrar</button>
-  </form>
-  {{if .PasskeysEnabled}}
-  <div class="sep">ou</div>
-  <button id="passkey-login" type="button">Entrar com uma passkey</button>
-  <p class="muted" id="passkey-msg"></p>
-  {{end}}
-  <p class="muted">Primeiro acesso? Use o link de convite que você recebeu.</p>
+<div class="auth-page">
+  <div class="auth-topbar">
+    <button class="icon-btn" id="theme-toggle" type="button" aria-label="Alternar tema">
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+
+  <main class="auth-main">
+    <div class="auth-shell">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none" stroke="white" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+            <path d="M8.5 12.4 16 8.4l7.5 4v8.2L16 24.6l-7.5-4v-8.2Z"/>
+            <path d="m8.8 12.7 7.2 4.1 7.2-4.1M16 16.8v7.4" opacity=".8"/>
+            <circle cx="23.4" cy="9.2" r="2.1" fill="white" stroke="none"/>
+          </svg>
+        </span>
+        <span class="brand-name">mail<span>flow</span></span>
+      </div>
+
+      <div class="card">
+        <h1>Entrar no painel</h1>
+        <p class="sub">Gerencie as jornadas de e-mail pós-compra das suas lojas Shopify.</p>
+
+        {{if .Error}}
+        <div class="alert alert-error" role="alert">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+          <span>{{.Error}}</span>
+        </div>
+        {{end}}
+
+        <form class="form" method="post" action="/login">
+          <input type="hidden" name="next" value="{{.Next}}">
+          <div class="field">
+            <label for="email">Email</label>
+            <input class="input" id="email" name="email" type="email" autocomplete="username" value="{{.Email}}" placeholder="voce@empresa.com" required autofocus>
+          </div>
+          <div class="field">
+            <label for="password">Senha</label>
+            <input class="input" id="password" name="password" type="password" autocomplete="current-password" placeholder="Sua senha" required>
+          </div>
+          <button class="btn btn-primary" type="submit">Entrar</button>
+        </form>
+
+        {{if .PasskeysEnabled}}
+        <div class="sep"><span>ou</span></div>
+        <button class="btn btn-outline" id="passkey-login" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 11.4a8 8 0 0 1 10.8-5.8"/><path d="M6 15a4 4 0 0 1 4-4"/><path d="M12 21a9 9 0 0 0 9-9"/><circle cx="11" cy="15" r="2"/><path d="m12.4 16.4 3.6 3.6M15 19l1.5-1.5M17 21l1.5-1.5"/></svg>
+          Entrar com passkey
+        </button>
+        <p class="msg" id="passkey-msg" aria-live="polite"></p>
+        {{end}}
+
+        <p class="foot">Primeiro acesso? Use o link de convite que você recebeu.<br>Para redefinir a senha, peça um novo convite ao proprietário da conta.</p>
+      </div>
+
+      <p class="foot">mailflow · automação pós-compra para Shopify</p>
+    </div>
+  </main>
 </div>
-{{if .PasskeysEnabled}}<script src="/static/passkey.js"></script>{{end}}
+<script src="/static/theme.js" defer></script>
+{{if .PasskeysEnabled}}<script src="/static/passkey.js" defer></script>{{end}}
 </body>
 </html>

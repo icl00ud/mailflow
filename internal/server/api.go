@@ -24,6 +24,7 @@ type stepView struct {
 	Effective string         `json:"effective"` // on | off | draft
 	Timing    string         `json:"timing"`
 	Counts    map[string]int `json:"counts"`
+	Held      int            `json:"held"` // pending jobs waiting on a hold condition
 }
 
 type flowView struct {
@@ -72,13 +73,18 @@ func (s *Server) apiFlows(w http.ResponseWriter, r *http.Request) {
 			fail(w, 500, err)
 			return
 		}
+		held, err := s.Eng.Store.StepHeldCounts(r.Context(), id)
+		if err != nil {
+			fail(w, 500, err)
+			return
+		}
 		fv := flowView{Store: f.Store, Sender: s.SenderName}
 		for _, st := range f.Steps {
 			eff := st.Status
 			if v, ok := over[st.ID]; ok && st.Status != flow.StatusDraft {
 				eff = v
 			}
-			fv.Steps = append(fv.Steps, stepView{Step: st, Effective: eff, Timing: st.Timing(), Counts: counts[st.ID]})
+			fv.Steps = append(fv.Steps, stepView{Step: st, Effective: eff, Timing: st.Timing(), Counts: counts[st.ID], Held: held[st.ID]})
 		}
 		out = append(out, fv)
 	}

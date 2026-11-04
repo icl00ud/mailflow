@@ -1,7 +1,8 @@
 # mailflow
 
 Post-purchase email journey for our Shopify stores (Arman Curren first). Go, Postgres, no framework.
-Shopify webhooks -> scheduled jobs in Postgres -> SMTP, with a panel that shows the flow as lanes of step cards.
+Shopify webhooks -> scheduled jobs in Postgres -> SMTP, with a React panel that maps the journey, its
+conditions, per-step delivery counts and every order's timeline.
 
 ## Journey (stores/arman-curren/flow.yaml)
 
@@ -24,7 +25,7 @@ Business hours = clock hours counted only Mon-Fri (America/New_York, `holidays:`
 
 At-most-once. A job is claimed (`sending`) before the SMTP call. If the failure happened *before* the DATA phase
 (dial/auth/RCPT) it retries 3x with backoff; any ambiguous failure (write/commit) becomes `failed` and waits for a
-human (click the red chip in the panel). Jobs found in `sending` after a restart are marked `failed`, never resent.
+human ("Reenviar" in the dashboard or on the order). Jobs found in `sending` after a restart are marked `failed`, never resent.
 `UNIQUE(order_id, step_id)` plus idempotent webhooks mean a redelivered `orders/paid` cannot send twice.
 
 ## Run
@@ -35,7 +36,36 @@ TEST_DATABASE_URL=postgres://... go test ./...    # also runs the Postgres contr
 go run ./cmd/mailflow -check                      # validate flows + templates
 PUBLIC_ORIGIN=http://localhost:8080 COOKIE_SECURE=false \
   go run ./cmd/mailflow                           # in-memory store, dry-run sender; login needs an invited user
+go run ./cmd/mailflow -demo                       # seeded demo + one-time invite URL (see below)
 ```
+
+### Panel (React SPA)
+
+The panel under `web/` is React 18 + TypeScript + Vite + Tailwind + shadcn/ui. Vite writes the
+content-hashed bundle to `internal/server/web/app`, which is embedded into the Go binary. The
+server-rendered login/invite pages share the same design tokens (`internal/server/web/static/auth.css`).
+
+```bash
+cd web && npm install          # once
+cd web && npm run dev          # http://localhost:5173, proxies /api, /login, /invite to :8080
+cd web && npm run build        # tsc + Vite -> internal/server/web/app (commit the result for go test CI)
+```
+
+The dev proxy rewrites `Origin` to `http://localhost:8080`, so the Go CSRF check keeps working.
+The committed `app/` bundle lets `go test ./...` (and `go build`) run without Node; the Dockerfile
+rebuilds it in a `node:22-alpine` stage.
+
+### Demo mode
+
+```bash
+go run ./cmd/mailflow -demo
+# prints: demo invite (one-time, 48h): http://localhost:8080/invite/<token>
+```
+
+`-demo` refuses to start when `DATABASE_URL` is set, forces the in-memory store, the log sender,
+`PUBLIC_ORIGIN=http://localhost:8080` and `COOKIE_SECURE=false`, and seeds a tenant/user plus orders
+in sent, scheduled, held, skipped, failed and canceled states. The one-time invite sets the password
+for `demo@mailflow.local`; after that every page can be reviewed locally.
 
 Env: `TRACK17_KEY` (17TRACK; unset = no automatic carrier events), `DATABASE_URL` (unset = memory),
 `SMTP_HOST/PORT/USER/PASS` (unset = dry-run log sender), `SHOPIFY_WEBHOOK_SECRET_<STORE_ID>` (`ARMAN_CURREN`),

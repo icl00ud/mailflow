@@ -3,14 +3,44 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>{{.Title}}</title>
-<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/auth.css">
 </head>
 <body>
-<div class="auth">
-  <h1>Convite inválido</h1>
-  <p class="sub">Este link expirou, já foi usado, ou nunca existiu. Peça um novo convite.</p>
-  <p><a href="/login">Ir para o login</a></p>
+<div class="auth-page">
+  <div class="auth-topbar">
+    <button class="icon-btn" id="theme-toggle" type="button" aria-label="Alternar tema">
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+
+  <main class="auth-main">
+    <div class="auth-shell">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none" stroke="white" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+            <path d="M8.5 12.4 16 8.4l7.5 4v8.2L16 24.6l-7.5-4v-8.2Z"/>
+            <path d="m8.8 12.7 7.2 4.1 7.2-4.1M16 16.8v7.4" opacity=".8"/>
+            <circle cx="23.4" cy="9.2" r="2.1" fill="white" stroke="none"/>
+          </svg>
+        </span>
+        <span class="brand-name">mail<span>flow</span></span>
+      </div>
+
+      <div class="card">
+        <span class="gone-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.2 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.2a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+        </span>
+        <h1>Convite inválido ou expirado</h1>
+        <p class="sub">Este link já foi usado ou passou das 48 horas de validade. Convites são de uso único por segurança.</p>
+        <p class="sub">Peça um novo convite ao proprietário da conta para definir sua senha.</p>
+        <p class="foot">Não tem acesso? <a href="/login">Voltar para o login</a></p>
+      </div>
+    </div>
+  </main>
 </div>
+<script src="/static/theme.js" defer></script>
 </body>
 </html>

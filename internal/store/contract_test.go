@@ -9,7 +9,11 @@ import (
 
 // The same behavioural contract runs against Memory and, when TEST_DATABASE_URL
 // is set, against a real Postgres.
-func TestMemoryContract(t *testing.T) { contract(t, NewMemory()) }
+func TestMemoryContract(t *testing.T) {
+	m := NewMemory()
+	contract(t, m)
+	authContract(t, NewMemory())
+}
 
 func TestPostgresContract(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
@@ -22,10 +26,11 @@ func TestPostgresContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pg.Close()
-	if _, err := pg.pool.Exec(ctx, `TRUNCATE orders, step_overrides RESTART IDENTITY CASCADE`); err != nil {
+	if _, err := pg.pool.Exec(ctx, `TRUNCATE orders, step_overrides, tenants, users, webauthn_challenges RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatal(err)
 	}
 	contract(t, pg)
+	authContract(t, pg)
 	// schema is idempotent: a second boot must not fail
 	pg2, err := NewPostgres(ctx, dsn)
 	if err != nil {

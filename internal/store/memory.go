@@ -15,10 +15,30 @@ type Memory struct {
 	jobs      map[int64]*Job
 	events    []Event
 	overrides map[string]map[string]string
+
+	tenantByID  map[string]*Tenant
+	storeTenant map[string]string // store id -> tenant id
+	userByID    map[string]*User
+	userByEmail map[string]string // lower-cased email -> user id
+	memberships map[string]map[string]string
+	sessions    map[string]*Session
+	invites     map[string]*Invite
+	passkeys    map[string]*Passkey
+	challenges  map[string]*Challenge
 }
 
 func NewMemory() *Memory {
-	return &Memory{orders: map[int64]*Order{}, jobs: map[int64]*Job{}, overrides: map[string]map[string]string{}}
+	return &Memory{orders: map[int64]*Order{}, jobs: map[int64]*Job{}, overrides: map[string]map[string]string{},
+		tenantByID:  map[string]*Tenant{},
+		storeTenant: map[string]string{},
+		userByID:    map[string]*User{},
+		userByEmail: map[string]string{},
+		memberships: map[string]map[string]string{},
+		sessions:    map[string]*Session{},
+		invites:     map[string]*Invite{},
+		passkeys:    map[string]*Passkey{},
+		challenges:  map[string]*Challenge{},
+	}
 }
 
 func (m *Memory) next() int64 { m.seq++; return m.seq }

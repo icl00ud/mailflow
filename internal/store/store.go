@@ -71,6 +71,8 @@ type Event struct {
 type StepCounts map[string]map[string]int // stepID -> status -> n
 
 type Store interface {
+	AuthStore
+
 	Ping(ctx context.Context) error
 
 	// UpsertOrder inserts by (store, external id); on conflict it leaves the row alone and sets o.ID.

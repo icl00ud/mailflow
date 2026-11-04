@@ -53,3 +53,82 @@ CREATE TABLE IF NOT EXISTS step_overrides (
   status   TEXT NOT NULL,
   PRIMARY KEY (store_id, step_id)
 );
+
+-- Tenancy: a tenant owns one or more stores; people belong to tenants.
+CREATE TABLE IF NOT EXISTS tenants (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- store_id is unique: a store belongs to exactly one tenant.
+CREATE TABLE IF NOT EXISTS tenant_stores (
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  store_id  TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, store_id),
+  UNIQUE (store_id)
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id            TEXT PRIMARY KEY,
+  email         TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL DEFAULT '', -- empty until the invite is accepted
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (email = lower(email))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower ON users (lower(email));
+
+CREATE TABLE IF NOT EXISTS memberships (
+  user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  role      TEXT NOT NULL DEFAULT 'member',
+  PRIMARY KEY (user_id, tenant_id),
+  CHECK (role IN ('owner','member'))
+);
+CREATE INDEX IF NOT EXISTS memberships_tenant ON memberships (tenant_id);
+
+-- Only the SHA-256 of the cookie token is stored.
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS sessions_expires ON sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS invites (
+  id         TEXT PRIMARY KEY,
+  tenant_id  TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  email      TEXT NOT NULL,
+  role       TEXT NOT NULL DEFAULT 'member',
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at    TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (role IN ('owner','member'))
+);
+CREATE INDEX IF NOT EXISTS invites_tenant ON invites (tenant_id);
+
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+  id           BYTEA PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  public_key   BYTEA NOT NULL,
+  sign_count   BIGINT NOT NULL DEFAULT 0,
+  transports   TEXT NOT NULL DEFAULT '[]',
+  name         TEXT NOT NULL DEFAULT '',
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS webauthn_credentials_user ON webauthn_credentials (user_id);
+
+-- WebAuthn ceremony state: short-lived and single use (deleted when taken).
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL DEFAULT '',
+  kind       TEXT NOT NULL,
+  data       BYTEA NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS webauthn_challenges_expires ON webauthn_challenges (expires_at);
+
